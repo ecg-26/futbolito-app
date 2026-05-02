@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { supabase } from "./supabaseClient";
 
 const matches2026 = [
   { id: 1, date: "2026-03-04", orange: 6, blue: 5, players: 14, fee: 4000, balance: 7000 },
@@ -2381,7 +2382,23 @@ function App() {
   const [active, setActive] = useState("dashboard");
   const [mobileOpen, setMobileOpen] = useState(false);
   const [selectedYear, setSelectedYear] = useState("2026");
-  const [selectedMatchId, setSelectedMatchId] = useState(8);
+  const [selectedMatchId, setSelectedMatchId] = useState(8);useEffect(() => {
+  async function testSupabaseConnection() {
+    const { data, error } = await supabase
+      .from("match_roster")
+      .select("*")
+      .order("arrival_order", { ascending: true });
+
+    if (error) {
+      console.error("Error Supabase:", error);
+      return;
+    }
+
+    console.log("Nómina desde Supabase:", data);
+  }
+
+  testSupabaseConnection();
+}, []);
   const showYearSelector = ["dashboard", "matches", "moments", "payments", "playerRankings", "bbq"].includes(active);
 
   const activeMatches = useMemo(() => getSeasonMatches(selectedYear), [selectedYear]);
