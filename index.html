@@ -988,7 +988,7 @@ function openCronicaModal(matchId){
     const r=m.roster;
     const nrj=r.filter(p=>p.matchTeam==='Naranjo');
     const azl=r.filter(p=>p.matchTeam==='Azul');
-    const flex=r.filter(p=>!p.matchTeam||p.matchTeam==='Pendiente'||p.matchTeam==='Flexible');
+    const flex=r.filter(p=>!p.matchTeam||p.matchTeam==='Pendiente'||p.matchTeam==='Flexible'||p.matchTeam==='Galleta');
     const renderTeam=(arr,color,bg,border,name)=>arr.length>0?
       '<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:10px"><div style="font-size:10px;font-weight:700;color:'+color+';letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'+name+' · '+arr.length+'</div>'+
       arr.map(p=>'<div style="font-size:11px;color:'+color+';margin:2px 0">'+p.name+(p.galleta?' 🍪':'')+'</div>').join('')+
@@ -1742,8 +1742,8 @@ function saveFinalizar(){
 }
 function setMy(s){S.nextMatch.roster=S.nextMatch.roster.map((p,i)=>i===0?{...p,status:s}:p);rProximo()}
 function toggleMyGoalkeeper(){S.nextMatch.roster=S.nextMatch.roster.map((p,i)=>i===0?{...p,goalkeeper:!p.goalkeeper}:p);rProximo()}
-function setMatchTeam(pid,team){S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,matchTeam:team}:p);rProximo()}
-function toggleGoalkeeper(pid){S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,goalkeeper:!p.goalkeeper}:p);rProximo()}
+function setMatchTeam(pid,team){if(ROLE!=='admin')return;S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,matchTeam:team}:p);rProximo()}
+function toggleGoalkeeper(pid){if(ROLE!=='admin')return;S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,goalkeeper:!p.goalkeeper}:p);rProximo()}
 function autoAsignar(){
   const r=S.nextMatch.roster;
   let nNRJ=r.filter(p=>p.matchTeam==='Naranjo'&&(p.status==='Confirmado'||p.status==='Reserva')).length;
@@ -1919,6 +1919,9 @@ function saveAddJugadorNomina(){
 function prefillGalletaFromDB(gid){
   const g=(S.galletas||[]).find(function(x){return x.id===gid;});
   if(!g)return;
+  // Check dup en roster actual
+  const dup=(S.nextMatch.roster||[]).find(function(p){return p.galleta && p.name.toLowerCase()===g.name.toLowerCase();});
+  if(dup){alert('Esta galleta ya está en el plantel del partido.');return;}
   const ni=document.getElementById('g-name');if(ni)ni.value=g.name;
   const oi=document.getElementById('g-owner');if(oi)oi.value=g.invById||'';
   gSkill=g.skill||'jugador';
@@ -2311,7 +2314,7 @@ function rCuotas(){
     }
   });
 }
-function removeFromRoster(pid){if(!confirm('¿Eliminar este jugador de la nómina?'))return;S.nextMatch.roster=S.nextMatch.roster.filter(p=>p.pid!==pid);rProximo();}
+function removeFromRoster(pid){if(ROLE!=='admin')return;if(!confirm('¿Eliminar este jugador de la nómina?'))return;S.nextMatch.roster=S.nextMatch.roster.filter(p=>p.pid!==pid);rProximo();}
 function renderGastosBlock(){
   const gs=S.gastos||[];
   const total=gs.reduce((s,g)=>s+(g.monto||0),0);
@@ -2995,6 +2998,8 @@ function addRosterGalleta(){
   const ownerPid=document.getElementById('ng-owner').value;
   const skill=document.getElementById('ng-skill').value;
   if(!name){alert('Ponele un nombre.');return;}
+  const dup=__loadRosterGalletas.find(function(g){return g.name.toLowerCase()===name.toLowerCase();});
+  if(dup){alert('Esta galleta ya está agregada al plantel.');return;}
   const owner=(S.players||[]).find(function(p){return p.id===ownerPid;});
   __loadRosterGalletas.push({tempPid:'g'+Date.now()+'_'+__loadRosterGalletas.length,name:name,invBy:owner?owner.name:'',invById:ownerPid,skill:skill});
   document.getElementById('add-galleta-form').style.display='none';
@@ -3005,6 +3010,19 @@ function removeRosterGalleta(idx){
   renderLoadRosterBody();
 }
 
+
+
+// ============ iOS-safe row-tap delegation for Estadísticas ============
+(function(){
+  if(window.__ROW_TAP_BOUND)return;
+  window.__ROW_TAP_BOUND=true;
+  document.addEventListener('click', function(e){
+    const tr=e.target.closest('tr[data-date]');
+    if(!tr)return;
+    if(e.target.closest('button'))return;
+    if(typeof openCronicaModal==='function') openCronicaModal(tr.dataset.date);
+  }, true);
+})();
 </script>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
