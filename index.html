@@ -402,7 +402,7 @@ window._loadData();
     </div>
     <div class="modal-footer">
       <button class="btn" onclick="closeGalletaModal()">Cancelar</button>
-      <button class="btn btn-primary" onclick="saveGalleta()">Agregar galleta</button>
+      <label style="display:flex;align-items:center;gap:6px;margin-right:auto;font-size:11px;color:#92400e;cursor:pointer"><input type="checkbox" id="g-remember" checked style="margin:0;cursor:pointer"> Recordar para próximas</label>      <button class="btn btn-primary" onclick="saveGalleta()" style="background:#b45309;border-color:#92400e">Agregar galleta</button>
     </div>
   </div>
 </div>
@@ -1987,7 +1987,8 @@ function saveGalleta(){
     const existing=(S.galletas||[]).find(function(g){return g.name.toLowerCase()===name.toLowerCase() && g.invById===(ownerId||'');});
     if(!existing){
       S.galletas=S.galletas||[];
-      S.galletas.push({id:'gd'+Date.now(),name:name,invById:ownerId||'',invBy:ownerName||'',skill:gSkill||'jugador',active:true});
+      const ownerLookup=((S.players||[]).find(function(p){return p.id===ownerId;})||(S.nextMatch.roster||[]).find(function(p){return p.pid===ownerId;})||{}).name||'';
+      S.galletas.push({id:'gd'+Date.now(),name:name,invById:ownerId||'',invBy:ownerLookup,skill:gSkill||'jugador',active:true});
     }
   }
   closeGalletaModal();
