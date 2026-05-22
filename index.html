@@ -2719,10 +2719,12 @@ document.addEventListener('DOMContentLoaded',function(){
 // ============== Load Roster Modal (D) ==============
 let __loadRosterMatchId=null;
 let __loadRosterAssigns={};
+let __loadRosterGalletas=[];
 function openLoadRosterModal(matchId){
   if(ROLE!=='admin')return;
   __loadRosterMatchId=matchId;
   __loadRosterAssigns={};
+  __loadRosterGalletas=[];
   const m=S.matches.find(x=>x.id===matchId);
   if(m){
     const matchFecha=fdate(m.date);
@@ -2738,6 +2740,7 @@ function closeLoadRosterModal(){
   document.getElementById('modal-load-roster').classList.remove('open');
   __loadRosterMatchId=null;
   __loadRosterAssigns={};
+  __loadRosterGalletas=[];
 }
 function setLoadRosterTeam(pid,team){
   if(team) __loadRosterAssigns[pid]=team;
@@ -2770,7 +2773,39 @@ function renderLoadRosterBody(){
      +'</div>';
   });
   html+='</div>';
+  const sortedPlayers=players;
+  html+='<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
+   +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b45309;margin-bottom:8px">Galletas (invitados)</div>';
+  __loadRosterGalletas.forEach(function(g,i){
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:4px"><span style="font-size:13px">🐔 '+g.name+' <span style=\"color:#92400e;font-size:11px\">(de '+g.invBy+')</span></span><button onclick="removeRosterGalleta('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
+  });
+  html+='<button class="btn btn-sm" onclick="toggleAddGalletaForm()" style="background:#fffbeb;border-color:#fde68a;color:#b45309;margin-top:4px">+ Galleta invitado</button>'
+   +'<div id="add-galleta-form" style="display:none;margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px">'
+   +'<input id="ng-name" class="input" placeholder="Nombre del invitado" style="margin-bottom:6px">'
+   +'<select id="ng-owner" class="input" style="margin-bottom:6px">'+sortedPlayers.map(function(p){return '<option value="'+p.pid+'">'+p.name+'</option>';}).join('')+'</select>'
+   +'<select id="ng-skill" class="input" style="margin-bottom:6px"><option value="jugador">⚽ Jugador</option><option value="arquero">🥅 Arquero</option><option value="ambos">⚽🥅 Ambos</option></select>'
+   +'<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn btn-sm" onclick="toggleAddGalletaForm()">Cancelar</button><button class="btn btn-sm btn-primary" onclick="addRosterGalleta()">Agregar</button></div>'
+   +'</div></div>';
   document.getElementById('modal-load-roster-body').innerHTML=html;
+}
+function toggleAddGalletaForm(){
+  const f=document.getElementById('add-galleta-form');
+  if(!f)return;
+  f.style.display=f.style.display==='none'?'block':'none';
+}
+function addRosterGalleta(){
+  const name=(document.getElementById('ng-name').value||'').trim();
+  const ownerPid=document.getElementById('ng-owner').value;
+  const skill=document.getElementById('ng-skill').value;
+  if(!name){alert('Ponele un nombre.');return;}
+  const owner=(S.players||[]).find(function(p){return p.pid===ownerPid;});
+  __loadRosterGalletas.push({tempPid:'g'+Date.now()+'_'+__loadRosterGalletas.length,name:name,invBy:owner?owner.name:'?',invById:ownerPid,skill:skill});
+  document.getElementById('add-galleta-form').style.display='none';
+  renderLoadRosterBody();
+}
+function removeRosterGalleta(idx){
+  __loadRosterGalletas.splice(idx,1);
+  renderLoadRosterBody();
 }
 function saveLoadRoster(){
   if(ROLE!=='admin')return;
@@ -2784,7 +2819,10 @@ function saveLoadRoster(){
     const p=playersById[pid];if(!p||!team)return;
     roster.push({pid:p.pid,name:p.name,matchTeam:team,team:p.team||team,skill:p.skill||'',galleta:!!p.galleta,status:'Confirmado'});
   });
-  if(!roster.length){alert('No marcaste a nadie. Asignale equipo a al menos un jugador.');return;}
+  __loadRosterGalletas.forEach(function(g){
+    roster.push({pid:g.tempPid,name:g.name,matchTeam:'Galleta',team:'Galleta',skill:g.skill||'jugador',galleta:true,invBy:g.invBy,invById:g.invById,status:'Confirmado'});
+  });
+  if(!roster.length){alert('No marcaste a nadie ni agregaste galleta.');return;}
   m.roster=roster;
   if(window._saveToFirestore) window._saveToFirestore();
   closeLoadRosterModal();
