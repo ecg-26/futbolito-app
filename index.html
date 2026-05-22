@@ -240,7 +240,7 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstat
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
 const db=getFirestore(app);
 let _snap1=false;
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
 window._saveToFirestore=async()=>{try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
 window._loadData=async()=>{try{const ref=doc(db,'futbolito','estado'),snap=await getDoc(ref);if(snap.exists()){const d=snap.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos}else{window._saveToFirestore()}onSnapshot(ref,s=>{if(!_snap1){_snap1=true;return}if(!s.exists())return;const d=s.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos;try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}});_snap1=true}catch(e){console.error('FS load:',e.message)}finally{_initApp()}};
 window._initApp=_initApp;
@@ -669,7 +669,9 @@ let S={
 const clp=n=>new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maximumFractionDigits:0}).format(n||0);
 const fdate=d=>{if(!d)return'–';const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'–';return new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);};
 const fdateYear=d=>{if(!d)return'';const dt=new Date(d+'T12:00:00');const base=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);return base+'-'+String(dt.getFullYear()).slice(2);}
+const dateBadgeHTML=(d)=>{const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'<div></div>';const dow=new Intl.DateTimeFormat('es-CL',{weekday:'short'}).format(dt).replace('.','').toUpperCase();const day=dt.getDate();const month=new Intl.DateTimeFormat('es-CL',{month:'short'}).format(dt).replace('.','').toUpperCase();return '<div style="display:inline-flex;flex-direction:column;align-items:center;background:#fff;border:2px solid var(--orange);border-radius:14px;padding:6px 14px;min-width:74px;box-shadow:0 4px 12px rgba(234,108,10,0.15);line-height:1"><div style="font-size:10px;font-weight:700;color:var(--orange);letter-spacing:0.08em">'+dow+'</div><div style="font-size:30px;font-weight:800;color:var(--brand);margin:3px 0;letter-spacing:-0.04em">'+day+'</div><div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.05em">'+month+'</div></div>';};
 const winner=m=>m.orange>m.blue?'Naranjo':m.blue>m.orange?'Azul':'Empate';
+const fechaN=m=>{if(!m||!m.date)return m&&m.id?m.id:0;const ms=S.matches.filter(x=>(x.season||2026)===(m.season||2026)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));const idx=ms.findIndex(x=>x.id===m.id);return idx>=0?idx+1:m.id;};
 const winBadge=m=>{const w=winner(m);return`<span class="badge badge-${w==='Naranjo'?'orange':w==='Azul'?'blue':'draw'}">${w}</span>`};
 const teamTag=t=>`<span class="tag-${t==='Naranjo'?'orange':t==='Azul'?'blue':'flex'}">${t}</span>`;
 const calcFee=(p,c,fee)=>{fee=fee||4000;return{fee,asado:fee*p-c}};
@@ -954,7 +956,7 @@ function openCronicaModal(matchId){
   const diff=Math.abs(m.orange-m.blue);
   const contenido=`<div style="border-top:3px solid ${cr.winColor};padding:1.125rem">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-      <span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;color:#8896b3">Crónica · Fecha ${m.id} · ${fdateYear(m.date)}</span>
+      <span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;color:#8896b3">Crónica · Fecha ${fechaN(m)} · ${fdateYear(m.date)}</span>
       <span style="background:${cr.winBg};color:${cr.winColor};border:0.5px solid ${cr.winBorder};border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">${w==='Empate'?'🤝 Empate':'🏆 '+cr.winName+' gana'}</span>
     </div>
     <div style="background:#12485b;border-radius:12px;padding:16px 24px;display:flex;align-items:center;justify-content:center;gap:24px;margin-bottom:14px">
@@ -979,6 +981,24 @@ function openCronicaModal(matchId){
       </div>
     </div>
   </div>`;
+  
+  if(m.roster&&m.roster.length){
+    const r=m.roster;
+    const nrj=r.filter(p=>p.matchTeam==='Naranjo');
+    const azl=r.filter(p=>p.matchTeam==='Azul');
+    const flex=r.filter(p=>!p.matchTeam||p.matchTeam==='Pendiente'||p.matchTeam==='Flexible');
+    const renderTeam=(arr,color,bg,border,name)=>arr.length>0?
+      '<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:10px"><div style="font-size:10px;font-weight:700;color:'+color+';letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'+name+' · '+arr.length+'</div>'+
+      arr.map(p=>'<div style="font-size:11px;color:'+color+';margin:2px 0">'+p.name+(p.galleta?' 🍪':'')+'</div>').join('')+
+      '</div>':'';
+    const plantelHTML='<div style="border-top:1px solid #e2e8f0;padding:14px 1.125rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99;margin-bottom:8px">Plantel del partido</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
+      renderTeam(nrj,'#ea6c0a','#fff3ed','#fcd9b8','Naranjo')+
+      renderTeam(azl,'#1d5fa5','#eff6ff','#bfdbfe','Azul')+
+      '</div>'+
+      (flex.length>0?'<div style="margin-top:8px">'+renderTeam(flex,'#6b7a99','#f6f8fb','#e2e8f0','Pendientes / Flex / Galletas')+'</div>':'')+
+      '</div>';
+    contenido=contenido+plantelHTML;
+  }
   document.getElementById('modal-cronica-content').innerHTML=contenido;
   document.getElementById('modal-cronica').classList.add('open');
 }
@@ -1119,11 +1139,11 @@ function getCronicaData(last, st, matches){
     } else {
       // Normal
       const normales=[
-        [`${winName} se lleva la Fecha ${last.id}`,`Ganó ${winName} por ${diff} ${diff===1?'gol':'goles'}. La tabla 2026 se mueve y ${winName} queda con ventaja.`],
+        [`${winName} se lleva la Fecha ${fechaN(last)}`,`Ganó ${winName} por ${diff} ${diff===1?'gol':'goles'}. La tabla 2026 se mueve y ${winName} queda con ventaja.`],
         [`${winName} demuestra por qué manda esta temporada`,`${diff} goles de diferencia que valen más de lo que parece. ${winName} suma y sigue.`],
-        [`Noche de ${winName}: Fecha ${last.id} para el análisis`,`Un partido que empezó parejo y terminó decidido. ${winName} tuvo la tarde.`],
-        [`${winName} confirma su momento: Fecha ${last.id} sellada`,`Como el Barça de Iniesta: no fue el mejor partido pero sí el resultado correcto.`],
-        [`Tres puntos más para ${winName} en la Fecha ${last.id}`,`El fútbol es así. El que mete gana. Y hoy ganó ${winName}.`],
+        [`Noche de ${winName}: Fecha ${fechaN(last)} para el análisis`,`Un partido que empezó parejo y terminó decidido. ${winName} tuvo la tarde.`],
+        [`${winName} confirma su momento: Fecha ${fechaN(last)} sellada`,`Como el Barça de Iniesta: no fue el mejor partido pero sí el resultado correcto.`],
+        [`Tres puntos más para ${winName} en la Fecha ${fechaN(last)}`,`El fútbol es así. El que mete gana. Y hoy ganó ${winName}.`],
       ];
       const n=normales[last.id%normales.length];
       titulo=n[0]; cuerpo=n[1];
@@ -1146,7 +1166,7 @@ function rDash(){
       </div>
       ${nm.date?`<div class="card" style="margin-top:12px">
         <div style="font-size:var(--t-label);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:4px">Próximo partido</div>
-        <div style="font-size:30px;font-weight:800;color:var(--brand);letter-spacing:-0.02em;line-height:1.1">${fdate(nm.date)}</div>
+        ${dateBadgeHTML(nm.date)}
         <div style="font-size:13px;color:var(--text2)">${nm.roster.filter(p=>p.status==='Confirmado').length} confirmados</div>
       </div>`:''}
     `;
@@ -1447,7 +1467,7 @@ function rProximo(){
     <div class="page-header">
       <div><div class="page-eyebrow">Convocatoria</div><div class="page-title">Próximo Partido</div></div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:26px;font-weight:800;color:var(--brand);letter-spacing:-0.02em">${fdate(nm.date)}</span>
+        ${dateBadgeHTML(nm.date)}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openEditPartidoModal()" style="color:var(--text2)">✏️ Editar</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="limpiarNomina()" style="color:var(--text2)">Limpiar nómina</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openFinalizarModal()" style="background:#1a202c;color:#fff;border-color:#1a202c">Finalizar partido</button>':''}
@@ -1492,7 +1512,7 @@ function rProximo(){
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="addGalleta()">+ Galleta</button>':''}
       </div>
       <div class="table-wrap"><table>
-        <thead><tr><th>#</th><th>Jugador</th><th>Color base</th><th>Estado</th></tr></thead>
+        <thead><tr><th>#</th><th>Jugador</th><th>Color base</th><th>Estado</th>${ROLE==='admin'?'<th></th>':''}</tr></thead>
         <tbody>${r.map((p,i)=>{
           return '<tr>'
             +'<td style="color:var(--text3);font-size:12px">'+(i+1)+'</td>'
@@ -1528,6 +1548,7 @@ function rProximo(){
                 +'<option value="Sin confirmar"'+(p.status==='Sin confirmar'?' selected':'')+'>Sin resp.</option>'
                 +'</select></td>';
             })()
+            +(ROLE==='admin'?'<td style="width:32px;text-align:center"><button onclick="removeFromRoster(&apos;'+p.pid+'&apos;)" title="Eliminar de la nómina" style="background:none;border:1px solid #fecaca;border-radius:50%;width:24px;height:24px;cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;line-height:1;padding:0">✕</button></td>':'')
             +'</tr>';
         }).join('')}</tbody>
       </table></div>
@@ -1580,8 +1601,8 @@ function rProximo(){
         +'</div>';
     })()}
 
-    <!-- TIMELINE -->
-    <div class="card" style="margin-bottom:0">
+    <!-- TIMELINE (oculto, mantenido en código) -->
+    <div class="card" style="margin-bottom:0;display:none">
       ${(()=>{
         const resp=r.filter(p=>p.status==='Confirmado'||p.status==='Reserva'||p.status==='Baja');
         const total=resp.length;
@@ -1697,7 +1718,7 @@ function saveFinalizar(){
   const asado=parseInt(document.getElementById('f-asado').value)||calcFee(players,court).asado;
   const nid=S.matches.length?Math.max(...S.matches.map(m=>m.id))+1:1;
   // Registrar partido en historial
-  S.matches.push({id:nid,date:S.nextMatch.date,orange,blue,players,court,fee,asado});
+  S.matches.push({id:nid,date:S.nextMatch.date,orange,blue,players,court,fee,asado,season:2026,roster:S.nextMatch.roster.map(p=>({pid:p.pid,name:p.name,team:p.team,matchTeam:p.matchTeam,status:p.status,galleta:p.galleta||false,galletaOwner:p.galletaOwner,invBy:p.invBy,skill:p.skill,goalkeeper:p.goalkeeper||false}))});
   // Mover no pagados a morosos
   S.nextMatch.roster.filter(p=>(p.status==='Confirmado'||p.status==='Reserva')&&!p.paid).forEach(p=>{
     S.cuotasPend.push({pid:p.pid,name:p.name+(p.galleta?' (🍪 de '+p.invBy+')':''),fecha:fdate(S.nextMatch.date),amount:fee});
@@ -2184,9 +2205,10 @@ function rCuotas(){
       const ctx=cB.getContext('2d');ctx.scale(dpr,dpr);
       const totalCancha=cuotasMatches.reduce((s,m)=>s+m.court,0);
       const totalAsado=cuotasMatches.reduce((s,m)=>s+m.asado,0);
-      const total=totalCancha+totalAsado;
+      const totalGastosD=(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);
+      const total=totalCancha+totalAsado+totalGastosD;
       const cx=W*0.38,cy=H/2,r=Math.min(cx,cy)-16,ri=r*0.52;
-      const segs=[{v:totalCancha,color:'#e2e8f0',label:'Canchas',tc:'#6b7a99'},{v:totalAsado,color:'#fbcfe8',label:'Asado',tc:'#db2777'}];
+      const segs=[{v:totalCancha,color:'#e2e8f0',label:'Canchas',tc:'#6b7a99'},{v:totalAsado,color:'#fbcfe8',label:'Asado',tc:'#db2777'},{v:totalGastosD,color:'#fecaca',label:'Gastos',tc:'#dc2626'}].filter(s=>s.v>0);
       let angle=-Math.PI/2;
       segs.forEach(s=>{
         const slice=(s.v/total)*Math.PI*2;
@@ -2261,19 +2283,22 @@ function renderGastosBlock(){
     '</div>'+
     (gs.length===0?'<div style="color:var(--text3);font-size:13px;text-align:center;padding:1rem">Sin gastos registrados</div>':
       '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Monto</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'+
-      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2)">'+fdate(g.fecha)+'</td><td>'+g.glosa+'</td><td style="text-align:right;color:#dc2626;font-weight:700;white-space:nowrap">-'+clp(g.monto)+'</td>'+(ROLE==='admin'?'<td style="width:32px"><button onclick="removeGasto('+i+')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
+      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2)">'+fdate(g.fecha)+'</td><td>'+g.glosa+'</td><td style="text-align:right;color:#dc2626;font-weight:700;white-space:nowrap">-'+clp(g.monto)+'</td>'+(ROLE==='admin'?'<td style="width:64px;text-align:right;white-space:nowrap"><button onclick="editGasto('+i+')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-right:4px">✏️</button><button onclick="removeGasto('+i+')" title="Eliminar" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
       '<tr style="border-top:2px solid var(--border);background:var(--bg3)"><td colspan="2" style="font-weight:700;color:var(--text)">Total gastos</td><td style="text-align:right;color:#dc2626;font-weight:800;font-size:14px">-'+clp(total)+'</td>'+(ROLE==='admin'?'<td></td>':'')+'</tr>'+
       '</tbody></table></div>')+
     '</div>';
 }
-function openGastoModal(){
+function openGastoModal(editIdx){
+  if(ROLE!=='admin')return;
+  const existing=(editIdx!==undefined&&editIdx>=0)?S.gastos[editIdx]:null;
   const today=new Date().toISOString().split('T')[0];
   const html='<div class="modal-overlay open" id="modal-gasto-temp" onclick="if(event.target===this)closeGastoModal()">'+
     '<div class="modal" style="max-width:380px">'+
-    '<div class="modal-title">Registrar gasto</div>'+
-    '<div class="form-row"><div class="form-group"><div class="form-label">Fecha</div><input class="input" type="date" id="g-fecha" value="'+today+'"></div>'+
-    '<div class="form-group"><div class="form-label">Monto ($)</div><input class="input" type="number" id="g-monto" placeholder="0"></div></div>'+
-    '<div class="form-group"><div class="form-label">Concepto + emoji</div><input class="input" type="text" id="g-glosa" placeholder="Ej: Compra Balón ⚽" maxlength="60"></div>'+
+    '<div class="modal-title">'+(existing?'Editar gasto':'Registrar gasto')+'</div>'+
+    '<div class="form-row"><div class="form-group"><div class="form-label">Fecha</div><input class="input" type="date" id="g-fecha" value="'+(existing?existing.fecha:today)+'"></div>'+
+    '<div class="form-group"><div class="form-label">Monto ($)</div><input class="input" type="number" id="g-monto" placeholder="0" value="'+(existing?existing.monto:'')+'"></div></div>'+
+    '<div class="form-group"><div class="form-label">Concepto + emoji</div><input class="input" type="text" id="g-glosa" placeholder="Ej: Compra Balón ⚽" maxlength="60" value="'+(existing?existing.glosa.replace(/"/g,'&quot;'):'')+'"></div>'+
+    '<input type="hidden" id="g-editidx" value="'+(editIdx!==undefined?editIdx:'')+'">'+
     '<div class="modal-footer"><button class="btn" onclick="closeGastoModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGasto()">Guardar</button></div>'+
     '</div></div>';
   const wrap=document.createElement('div');
@@ -2283,16 +2308,27 @@ function openGastoModal(){
 }
 function closeGastoModal(){const m=document.getElementById('modal-gasto-temp');if(m)m.remove();}
 function saveGasto(){
+  if(ROLE!=='admin')return;
   const fecha=document.getElementById('g-fecha').value;
   const monto=parseInt(document.getElementById('g-monto').value)||0;
   const glosa=document.getElementById('g-glosa').value.trim();
+  const editIdxStr=document.getElementById('g-editidx').value;
   if(!fecha||!monto||!glosa){alert('Completa fecha, monto y concepto');return;}
   if(!S.gastos)S.gastos=[];
-  S.gastos.push({id:'gst'+Date.now(),fecha,monto,glosa});
+  if(editIdxStr!==''){
+    const idx=parseInt(editIdxStr);
+    if(idx>=0&&idx<S.gastos.length){
+      S.gastos[idx]={...S.gastos[idx],fecha,monto,glosa};
+    }
+  }else{
+    S.gastos.push({id:'gst'+Date.now(),fecha,monto,glosa});
+  }
   closeGastoModal();
   rCuotas();
 }
+function editGasto(i){if(ROLE!=='admin')return;openGastoModal(i);}
 function removeGasto(i){
+  if(ROLE!=='admin')return;
   if(!confirm('¿Eliminar este gasto?'))return;
   S.gastos.splice(i,1);
   rCuotas();
@@ -2332,7 +2368,12 @@ function rAsado(){
   ];
   const desbloqueados=Math.max(1,Math.floor(pct/10));
   let acc=0;
-  const acumulados=asadoMatches.map(m=>{acc+=m.asado;return{date:m.date,acc}});
+  const timeline=[];
+  asadoMatches.forEach(m=>{timeline.push({type:'partido',date:m.date,m,monto:m.asado});});
+  (S.gastos||[]).forEach((g,gi)=>{timeline.push({type:'gasto',date:g.fecha,g,gIdx:gi,monto:-(g.monto||0)});});
+  timeline.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  timeline.forEach(item=>{acc+=item.monto;item.acc=acc;});
+  const acumulados=timeline.filter(t=>t.type==='partido').map(t=>({date:t.date,acc:t.acc}));
   document.getElementById('page-asado').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Fondo grupal</div><div class="page-title">Asado</div></div></div>
     <div class="bbq-hero">
@@ -2371,13 +2412,21 @@ function rAsado(){
       <div class="card-title">Aporte por fecha</div>
       <div class="table-wrap"><table>
         <thead><tr><th>Fecha</th><th style="text-align:center;width:60px">Jug.</th><th style="text-align:center">Aporte</th><th style="text-align:center">Acumulado</th></tr></thead>
-        <tbody>${[...acumulados].reverse().map(a=>{
-          const m=S.matches.find(x=>x.date===a.date);
+        <tbody>${[...timeline].reverse().map(item=>{
+          if(item.type==='gasto'){
+            return '<tr style="background:#fef2f2">'
+              +'<td style="color:#dc2626;white-space:nowrap;font-style:italic">'+fdate(item.date)+'</td>'
+              +'<td style="text-align:center;color:#dc2626;font-size:18px" title="Gasto">💸</td>'
+              +'<td style="text-align:center;color:#dc2626;font-weight:600;white-space:nowrap">'+item.g.glosa+' <span style="font-size:11px;opacity:0.8">(-'+clp(-item.monto)+')</span></td>'
+              +'<td style="text-align:center;font-weight:700;color:var(--text);white-space:nowrap">'+clp(item.acc)+'</td>'
+              +'</tr>';
+          }
+          const m=item.m;
           return '<tr>'
-            +'<td style="color:var(--text2);white-space:nowrap">'+fdate(a.date)+'</td>'
+            +'<td style="color:var(--text2);white-space:nowrap">'+fdate(item.date)+'</td>'
             +'<td style="text-align:center">'+(m?m.players:'')+'</td>'
             +'<td style="text-align:center;color:var(--pink);font-weight:600;white-space:nowrap">'+(m?(ROLE==='admin'?'<button onclick="editAsadoPartido('+m.id+','+(m.season||2026)+')" style="background:none;border:none;cursor:pointer;font-size:13px;font-weight:600;color:var(--pink);padding:2px 4px;border-radius:4px;font-family:inherit" title="Editar aporte">'+clp(m.asado)+' ✏️</button>':clp(m.asado)):'')+'</td>'
-            +'<td style="text-align:center;font-weight:700;color:var(--text);white-space:nowrap">'+clp(a.acc)+'</td>'
+            +'<td style="text-align:center;font-weight:700;color:var(--text);white-space:nowrap">'+clp(item.acc)+'</td>'
             +'</tr>';
         }).join('')}</tbody>
       </table></div>
