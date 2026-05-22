@@ -2812,14 +2812,17 @@ function renderLoadRosterBody(){
   html+='<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
    +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b45309;margin-bottom:8px">Galletas (invitados)</div>';
   __loadRosterGalletas.forEach(function(g,i){
-    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:4px"><span style="font-size:13px">🐔 '+g.name+' <span style=\"color:#92400e;font-size:11px\">(de '+g.invBy+')</span></span><button onclick="removeRosterGalleta('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
+    const tColor=g.team==='Naranjo'?'#ea6c0a':g.team==='Azul'?'#1d5fa5':g.team==='Flexible'?'#6b7a99':'#b45309';
+    const tBg=g.team==='Naranjo'?'#fff3ed':g.team==='Azul'?'#eff6ff':g.team==='Flexible'?'#f6f8fb':'#fffbeb';
+    const tBorder=g.team==='Naranjo'?'#fcd9b8':g.team==='Azul'?'#bfdbfe':g.team==='Flexible'?'#e2e8f0':'#fde68a';
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+tBg+';border:1px solid '+tBorder+';border-radius:8px;margin-bottom:4px"><span style="font-size:13px;color:'+tColor+';font-weight:600">🐔 '+g.name+'</span><span style="font-size:11px;background:#fff;color:'+tColor+';border:1px solid '+tBorder+';border-radius:10px;padding:2px 7px">'+(g.team||'Galleta')+'</span><span style="color:#92400e;font-size:11px">(de '+(g.invBy||'?')+')</span><button onclick="changeRosterGalletaTeam('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:'+tColor+';font-size:13px;text-decoration:underline">cambiar</button><button onclick="removeRosterGalleta('+i+')" style="background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
   });
   html+='<button class="btn btn-sm" onclick="toggleAddGalletaForm()" style="background:#fffbeb;border-color:#fde68a;color:#b45309;margin-top:4px">+ Galleta invitado</button>'
    +'<div id="add-galleta-form" style="display:none;margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px">'
    +((S.galletas||[]).length?'<div style="font-size:11px;color:#92400e;margin-bottom:4px">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'+(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(g){return '<button class="btn btn-sm" onclick="prefillRosterGalleta(\''+g.id+'\')" style="background:#fff;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+g.name+'</button>';}).join('')+'</div>':'')
    +'<input id="ng-name" class="input" placeholder="Nombre del invitado" style="margin-bottom:6px">'
    +'<select id="ng-owner" class="input" style="margin-bottom:6px"><option value="">— Sin owner —</option>'+sortedPlayers.map(function(p){return '<option value="'+p.id+'">'+p.name+'</option>';}).join('')+'</select>'
-   +'<select id="ng-skill" class="input" style="margin-bottom:6px"><option value="jugador">⚽ Jugador</option><option value="arquero">🥅 Arquero</option><option value="ambos">⚽🥅 Ambos</option></select>'
+   +'<select id="ng-team" class="input" style="margin-bottom:6px"><option value="Galleta">🐔 Galleta</option><option value="Naranjo">🟠 Naranjo</option><option value="Azul">🔵 Azul</option><option value="Flexible">⚪ Flexible</option></select>'+'<select id="ng-skill" class="input" style="margin-bottom:6px"><option value="jugador">⚽ Jugador</option><option value="arquero">🥅 Arquero</option><option value="ambos">⚽🥅 Ambos</option></select>'
    +'<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn btn-sm" onclick="toggleAddGalletaForm()">Cancelar</button><button class="btn btn-sm btn-primary" onclick="addRosterGalleta()">Agregar</button></div>'
    +'</div></div>';
   document.getElementById('modal-load-roster-body').innerHTML=html;
@@ -2837,7 +2840,8 @@ function saveLoadRoster(){
     roster.push({pid:p.id,name:p.name,matchTeam:team,team:p.team||team,skill:p.skill||'',galleta:false,status:'Confirmado'});
   });
   __loadRosterGalletas.forEach(function(g){
-    roster.push({pid:g.tempPid,name:g.name,matchTeam:'Galleta',team:'Galleta',skill:g.skill||'jugador',galleta:true,invBy:g.invBy,invById:g.invById,status:'Confirmado'});
+    const gTeam=g.team||'Galleta';
+    roster.push({pid:g.tempPid,name:g.name,matchTeam:gTeam,team:gTeam,skill:g.skill||'jugador',galleta:true,invBy:g.invBy,invById:g.invById,status:'Confirmado'});
   });
   if(!roster.length){alert('No marcaste a nadie ni agregaste galleta.');return;}
   m.roster=roster;
@@ -2996,12 +3000,14 @@ function prefillRosterGalleta(gid){
 function addRosterGalleta(){
   const name=(document.getElementById('ng-name').value||'').trim();
   const ownerPid=document.getElementById('ng-owner').value;
+  const teamEl=document.getElementById('ng-team');
+  const team=(teamEl&&teamEl.value)||'Galleta';
   const skill=document.getElementById('ng-skill').value;
   if(!name){alert('Ponele un nombre.');return;}
   const dup=__loadRosterGalletas.find(function(g){return g.name.toLowerCase()===name.toLowerCase();});
   if(dup){alert('Esta galleta ya está agregada al plantel.');return;}
   const owner=(S.players||[]).find(function(p){return p.id===ownerPid;});
-  __loadRosterGalletas.push({tempPid:'g'+Date.now()+'_'+__loadRosterGalletas.length,name:name,invBy:owner?owner.name:'',invById:ownerPid,skill:skill});
+  __loadRosterGalletas.push({tempPid:'g'+Date.now()+'_'+__loadRosterGalletas.length,name:name,invBy:owner?owner.name:'',invById:ownerPid,skill:skill,team:team});
   document.getElementById('add-galleta-form').style.display='none';
   renderLoadRosterBody();
 }
@@ -3023,6 +3029,15 @@ function removeRosterGalleta(idx){
     if(typeof openCronicaModal==='function') openCronicaModal(tr.dataset.date);
   }, true);
 })();
+
+function changeRosterGalletaTeam(idx){
+  const g=__loadRosterGalletas[idx];
+  if(!g)return;
+  const teams=['Galleta','Naranjo','Azul','Flexible'];
+  const cur=teams.indexOf(g.team||'Galleta');
+  g.team=teams[(cur+1)%teams.length];
+  renderLoadRosterBody();
+}
 </script>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
