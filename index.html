@@ -241,7 +241,7 @@ const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDo
 const db=getFirestore(app);
 let _snap1=false;
 function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
-window._saveToFirestore=async()=>{try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
+window._saveToFirestore=async()=>{try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
 window._loadData=async()=>{try{const ref=doc(db,'futbolito','estado'),snap=await getDoc(ref);if(snap.exists()){const d=snap.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos}else{window._saveToFirestore()}onSnapshot(ref,s=>{if(!_snap1){_snap1=true;return}if(!s.exists())return;const d=s.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos;try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}});_snap1=true}catch(e){console.error('FS load:',e.message)}finally{_initApp()}};
 window._initApp=_initApp;
 window._currentUser={name:'Admin'};
@@ -654,7 +654,7 @@ let S={
     {id:'p018',name:'Cesar',team:'Azul',active:true,skill:'jugador'},
   ],
   nextMatch:{date:'',roster:[]},
-  cuotasPend:[],gastos:[],
+  cuotasPend:[],gastos:[],galletas:[],
   reglas:[
     {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
     {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
@@ -2511,6 +2511,7 @@ function rAsado(){
 
 function rConfig(){
   const myPlayer=S.players[0];
+  const __galletasHtml=(typeof rConfigGalletas==='function')?rConfigGalletas():'';
   if(ROLE==='admin'){
     document.getElementById('page-config').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Administración</div><div class="page-title">Configuración</div></div></div>
@@ -2719,12 +2720,10 @@ document.addEventListener('DOMContentLoaded',function(){
 // ============== Load Roster Modal (D) ==============
 let __loadRosterMatchId=null;
 let __loadRosterAssigns={};
-let __loadRosterGalletas=[];
 function openLoadRosterModal(matchId){
   if(ROLE!=='admin')return;
   __loadRosterMatchId=matchId;
   __loadRosterAssigns={};
-  __loadRosterGalletas=[];
   const m=S.matches.find(x=>x.id===matchId);
   if(m){
     const matchFecha=fdate(m.date);
@@ -2740,7 +2739,6 @@ function closeLoadRosterModal(){
   document.getElementById('modal-load-roster').classList.remove('open');
   __loadRosterMatchId=null;
   __loadRosterAssigns={};
-  __loadRosterGalletas=[];
 }
 function setLoadRosterTeam(pid,team){
   if(team) __loadRosterAssigns[pid]=team;
@@ -2764,65 +2762,30 @@ function renderLoadRosterBody(){
    +'<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:8px 10px;border-radius:8px;margin-bottom:10px">Resaltado en amarillo viene de cuotas pendientes con esa fecha. Ajustá libremente.</div>';
   html+='<div style="display:flex;flex-direction:column;gap:4px">';
   players.forEach(p=>{
-    const cur=__loadRosterAssigns[p.pid]||'';
-    const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.pid&&c.fecha===fdate(mm.date));})();
+    const cur=__loadRosterAssigns[p.id]||'';
+    const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.id&&c.fecha===fdate(mm.date));})();
     const opts=teams.map(t=>'<option value="'+t+'" '+(t===cur?'selected':'')+'>'+(t||'— no participó —')+'</option>').join('');
     html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;'+(fromCuotas?'background:#fffbeb':'background:transparent')+'">'
      +'<div style="flex:1;font-size:13px;color:'+(cur?teamColor(cur):'#6b7a99')+'">'+p.name+'</div>'
-     +'<select onchange="setLoadRosterTeam(\''+p.pid+'\',this.value)" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px">'+opts+'</select>'
+     +'<select onchange="setLoadRosterTeam(\''+p.id+'\',this.value)" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px">'+opts+'</select>'
      +'</div>';
   });
   html+='</div>';
-  const sortedPlayers=players;
-  html+='<div style="margin-top:14px;border-top:1px solid var(--border);padding-top:12px">'
-   +'<div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#b45309;margin-bottom:8px">Galletas (invitados)</div>';
-  __loadRosterGalletas.forEach(function(g,i){
-    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;margin-bottom:4px"><span style="font-size:13px">🐔 '+g.name+' <span style=\"color:#92400e;font-size:11px\">(de '+g.invBy+')</span></span><button onclick="removeRosterGalleta('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
-  });
-  html+='<button class="btn btn-sm" onclick="toggleAddGalletaForm()" style="background:#fffbeb;border-color:#fde68a;color:#b45309;margin-top:4px">+ Galleta invitado</button>'
-   +'<div id="add-galleta-form" style="display:none;margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px">'
-   +'<input id="ng-name" class="input" placeholder="Nombre del invitado" style="margin-bottom:6px">'
-   +'<select id="ng-owner" class="input" style="margin-bottom:6px">'+sortedPlayers.map(function(p){return '<option value="'+p.pid+'">'+p.name+'</option>';}).join('')+'</select>'
-   +'<select id="ng-skill" class="input" style="margin-bottom:6px"><option value="jugador">⚽ Jugador</option><option value="arquero">🥅 Arquero</option><option value="ambos">⚽🥅 Ambos</option></select>'
-   +'<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn btn-sm" onclick="toggleAddGalletaForm()">Cancelar</button><button class="btn btn-sm btn-primary" onclick="addRosterGalleta()">Agregar</button></div>'
-   +'</div></div>';
   document.getElementById('modal-load-roster-body').innerHTML=html;
-}
-function toggleAddGalletaForm(){
-  const f=document.getElementById('add-galleta-form');
-  if(!f)return;
-  f.style.display=f.style.display==='none'?'block':'none';
-}
-function addRosterGalleta(){
-  const name=(document.getElementById('ng-name').value||'').trim();
-  const ownerPid=document.getElementById('ng-owner').value;
-  const skill=document.getElementById('ng-skill').value;
-  if(!name){alert('Ponele un nombre.');return;}
-  const owner=(S.players||[]).find(function(p){return p.pid===ownerPid;});
-  __loadRosterGalletas.push({tempPid:'g'+Date.now()+'_'+__loadRosterGalletas.length,name:name,invBy:owner?owner.name:'?',invById:ownerPid,skill:skill});
-  document.getElementById('add-galleta-form').style.display='none';
-  renderLoadRosterBody();
-}
-function removeRosterGalleta(idx){
-  __loadRosterGalletas.splice(idx,1);
-  renderLoadRosterBody();
 }
 function saveLoadRoster(){
   if(ROLE!=='admin')return;
   if(!__loadRosterMatchId)return;
   const m=S.matches.find(x=>x.id===__loadRosterMatchId);
   if(!m)return;
-  const playersById={};(S.players||[]).forEach(p=>{playersById[p.pid]=p;});
+  const playersById={};(S.players||[]).forEach(p=>{playersById[p.id]=p;});
   const roster=[];
   Object.keys(__loadRosterAssigns).forEach(pid=>{
     const team=__loadRosterAssigns[pid];
     const p=playersById[pid];if(!p||!team)return;
-    roster.push({pid:p.pid,name:p.name,matchTeam:team,team:p.team||team,skill:p.skill||'',galleta:!!p.galleta,status:'Confirmado'});
+    roster.push({pid:p.id,name:p.name,matchTeam:team,team:p.team||team,skill:p.skill||'',galleta:false,status:'Confirmado'});
   });
-  __loadRosterGalletas.forEach(function(g){
-    roster.push({pid:g.tempPid,name:g.name,matchTeam:'Galleta',team:'Galleta',skill:g.skill||'jugador',galleta:true,invBy:g.invBy,invById:g.invById,status:'Confirmado'});
-  });
-  if(!roster.length){alert('No marcaste a nadie ni agregaste galleta.');return;}
+  if(!roster.length){alert('No marcaste a nadie. Asignale equipo a al menos un jugador.');return;}
   m.roster=roster;
   if(window._saveToFirestore) window._saveToFirestore();
   closeLoadRosterModal();
@@ -2837,12 +2800,12 @@ function matchesWithoutRoster(){
 }
 function buildBackfillPlan(){
   const plan=[];
-  const playersById={};(S.players||[]).forEach(p=>{playersById[p.pid]=p;});
+  const playersById={};(S.players||[]).forEach(p=>{playersById[p.id]=p;});
   matchesWithoutRoster().forEach(m=>{
     const matchFecha=fdate(m.date);
     const derived=(S.cuotasPend||[]).filter(c=>c.fecha===matchFecha && c.pid && playersById[c.pid]).map(c=>{
       const p=playersById[c.pid];
-      return {pid:p.pid,name:p.name,matchTeam:'Flexible',team:p.team||'Flexible',skill:p.skill||'',galleta:!!p.galleta,status:'Confirmado'};
+      return {pid:p.id,name:p.name,matchTeam:'Flexible',team:p.team||'Flexible',skill:p.skill||'',galleta:false,status:'Confirmado'};
     });
     plan.push({matchId:m.id,date:m.date,fecha:matchFecha,roster:derived});
   });
@@ -2899,6 +2862,70 @@ function saveBackfill(){
   if(typeof rPartidos==='function') rPartidos();
 }
 
+
+
+// ============== Galletas DB (recurrentes) ==============
+function rConfigGalletas(){
+  const gs=(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+  return '<div class="card" style="margin-bottom:1rem">'
+   +'<div class="card-title" style="display:flex;justify-content:space-between;align-items:center"><span>Galletas recurrentes</span>'
+   +(ROLE==='admin'?'<button class="btn btn-sm btn-primary" onclick="openEditGalletaDBModal(null)" style="background:#b45309;border-color:#92400e">+ Nueva galleta</button>':'')+'</div>'
+   +(gs.length===0?'<div style="text-align:center;padding:14px;color:#6b7a99;font-size:12px">Sin galletas guardadas todavía.</div>':
+     '<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Invitado por</th><th>Skill</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'
+     +gs.map(function(g){
+       const owner=(S.players||[]).find(function(p){return p.id===g.invById;});
+       const ownerName=owner?owner.name:(g.invBy||'?');
+       const skillIcon=g.skill==='arquero'?'🥅':g.skill==='ambos'?'⚽🥅':'⚽';
+       return '<tr><td>🐔 '+g.name+'</td><td style="color:#92400e">'+ownerName+'</td><td>'+skillIcon+'</td>'
+        +(ROLE==='admin'?'<td style="white-space:nowrap;text-align:right"><button class="btn btn-sm" onclick="openEditGalletaDBModal(\''+g.id+'\')">Editar</button> <button class="btn btn-sm" onclick="deleteGalletaDB(\''+g.id+'\')" style="color:#dc2626;border-color:#fecaca">🗑</button></td>':'')
+        +'</tr>';
+     }).join('')
+     +'</tbody></table></div>'
+   )
+   +'</div>';
+}
+function openEditGalletaDBModal(gid){
+  if(ROLE!=='admin')return;
+  const existing=gid?(S.galletas||[]).find(function(g){return g.id===gid;}):null;
+  const players=(S.players||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+  const ownerOptions='<option value="">— Sin owner —</option>'+players.map(function(p){return '<option value="'+p.id+'" '+(existing&&existing.invById===p.id?'selected':'')+'>'+p.name+'</option>';}).join('');
+  const skillOpts=['jugador','arquero','ambos'].map(function(s){return '<option value="'+s+'" '+(existing&&existing.skill===s?'selected':'')+'>'+(s==='jugador'?'⚽ Jugador':s==='arquero'?'🥅 Arquero':'⚽🥅 Ambos')+'</option>';}).join('');
+  const body=document.getElementById('modal-galleta-db-body');
+  body.innerHTML='<div class="form-group"><label class="form-label">Nombre</label><input id="gdb-name" class="input" value="'+(existing?existing.name.replace(/"/g,'&quot;'):'')+'" placeholder="Nombre del invitado"></div>'
+   +'<div class="form-group"><label class="form-label">Invitado por</label><select id="gdb-owner" class="input">'+ownerOptions+'</select></div>'
+   +'<div class="form-group"><label class="form-label">Skill habitual</label><select id="gdb-skill" class="input">'+skillOpts+'</select></div>'
+   +'<input type="hidden" id="gdb-edit-id" value="'+(gid||'')+'">';
+  document.getElementById('modal-galleta-db-title').innerText=existing?'Editar galleta':'Nueva galleta';
+  document.getElementById('modal-galleta-db').classList.add('open');
+}
+function closeEditGalletaDBModal(){document.getElementById('modal-galleta-db').classList.remove('open');}
+function saveGalletaDB(){
+  if(ROLE!=='admin')return;
+  const name=(document.getElementById('gdb-name').value||'').trim();
+  const ownerPid=document.getElementById('gdb-owner').value;
+  const skill=document.getElementById('gdb-skill').value;
+  const editId=document.getElementById('gdb-edit-id').value;
+  if(!name){alert('Ponele un nombre.');return;}
+  const owner=(S.players||[]).find(function(p){return p.id===ownerPid;});
+  S.galletas=S.galletas||[];
+  if(editId){
+    const g=S.galletas.find(function(x){return x.id===editId;});
+    if(g){g.name=name;g.invById=ownerPid;g.invBy=owner?owner.name:'';g.skill=skill;}
+  }else{
+    S.galletas.push({id:'gd'+Date.now(),name:name,invById:ownerPid,invBy:owner?owner.name:'',skill:skill,active:true});
+  }
+  if(window._saveToFirestore)window._saveToFirestore();
+  closeEditGalletaDBModal();
+  if(S.view==='config')rConfig();
+}
+function deleteGalletaDB(gid){
+  if(ROLE!=='admin')return;
+  if(!confirm('¿Borrar esta galleta de la base?'))return;
+  S.galletas=(S.galletas||[]).filter(function(g){return g.id!==gid;});
+  if(window._saveToFirestore)window._saveToFirestore();
+  if(S.view==='config')rConfig();
+}
+
 </script>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
@@ -2945,6 +2972,18 @@ function saveBackfill(){
     <div class="modal-footer">
       <button class="btn" onclick="closeBackfillModal()">Cancelar</button>
       <button class="btn btn-primary" id="modal-backfill-save" onclick="saveBackfill()">Confirmar y guardar</button>
+    </div>
+  </div>
+</div>
+
+
+<div class="modal-overlay" id="modal-galleta-db">
+  <div class="modal" style="width:420px">
+    <div class="modal-title" id="modal-galleta-db-title">Galleta</div>
+    <div id="modal-galleta-db-body"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeEditGalletaDBModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveGalletaDB()">Guardar</button>
     </div>
   </div>
 </div>
