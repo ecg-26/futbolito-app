@@ -714,6 +714,7 @@ function buildNav(){
 }
 
 function dashSetMy(status){
+  if(ROLE!=='admin')return;
   if(S.nextMatch.roster[0]) S.nextMatch.roster[0].status=status;
   rDash();
 }
@@ -1545,7 +1546,7 @@ function rProximo(){
               const stBg=p.status==='Confirmado'?'#f0fdf4':p.status==='Reserva'?'#fffbeb':p.status==='Baja'?'#fef2f2':'#f6f8fb';
               const stBrd=p.status==='Confirmado'?'#bbf7d0':p.status==='Reserva'?'#fde68a':p.status==='Baja'?'#fecaca':'#e2e8f0';
               const me=S.nextMatch.roster[0];
-              const canEdit=ROLE==='admin'||p.pid===me?.pid||p.galletaOwner===me?.pid;
+              const canEdit=ROLE==='admin';
               if(!canEdit){
                 return '<td><span style="background:'+stBg+';color:'+stColor+';border:1px solid '+stBrd+';border-radius:20px;padding:3px 8px;font-size:11px;font-weight:600">'+(p.status==='Confirmado'?'✓ Voy':p.status==='Reserva'?'Reserva':p.status==='Baja'?'💅🏻 Baja':'Sin resp.')+'</span></td>';
               }
@@ -1757,7 +1758,7 @@ function autoAsignar(){
   });
   rProximo();
 }
-function openSkillPicker(pid){
+function openSkillPicker(pid){if(ROLE!=='admin')return;
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
   if(!target)return;
   const sk=target.skill||'jugador';
@@ -1797,7 +1798,7 @@ function togglePaid(pid){
 function setGalletaSkill(pid,sk){
   const me=S.nextMatch.roster[0];
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
-  if(ROLE!=='admin'&&target?.galletaOwner!==me?.pid)return;
+  if(ROLE!=='admin')return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,skill:sk}:p);
   rProximo();
 }
@@ -1805,7 +1806,7 @@ function setRSt(pid,s){
   const me=S.nextMatch.roster[0];
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
   // Admin puede todo; usuario solo puede cambiar su propio estado o el de su galleta
-  if(ROLE!=='admin' && pid!==me?.pid && target?.galletaOwner!==me?.pid) return;
+  if(ROLE!=='admin') return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,status:s}:p);
   rProximo();
 }
