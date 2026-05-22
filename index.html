@@ -240,9 +240,9 @@ import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstat
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
 const db=getFirestore(app);
 let _snap1=false;
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
-window._saveToFirestore=async()=>{try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
-window._loadData=async()=>{try{const ref=doc(db,'futbolito','estado'),snap=await getDoc(ref);if(snap.exists()){const d=snap.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas}else{window._saveToFirestore()}onSnapshot(ref,s=>{if(!_snap1){_snap1=true;return}if(!s.exists())return;const d=s.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}});_snap1=true}catch(e){console.error('FS load:',e.message)}finally{_initApp()}};
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
+window._saveToFirestore=async()=>{try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
+window._loadData=async()=>{try{const ref=doc(db,'futbolito','estado'),snap=await getDoc(ref);if(snap.exists()){const d=snap.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos}else{window._saveToFirestore()}onSnapshot(ref,s=>{if(!_snap1){_snap1=true;return}if(!s.exists())return;const d=s.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos;try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}});_snap1=true}catch(e){console.error('FS load:',e.message)}finally{_initApp()}};
 window._initApp=_initApp;
 window._currentUser={name:'Admin'};
 window._loadData();
@@ -654,7 +654,7 @@ let S={
     {id:'p018',name:'Cesar',team:'Azul',active:true,skill:'jugador'},
   ],
   nextMatch:{date:'',roster:[]},
-  cuotasPend:[],
+  cuotasPend:[],gastos:[],
   reglas:[
     {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
     {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
@@ -1146,7 +1146,7 @@ function rDash(){
       </div>
       ${nm.date?`<div class="card" style="margin-top:12px">
         <div style="font-size:var(--t-label);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--text3);margin-bottom:4px">Próximo partido</div>
-        <div style="font-size:15px;font-weight:700">${fdate(nm.date)}</div>
+        <div style="font-size:30px;font-weight:800;color:var(--brand);letter-spacing:-0.02em;line-height:1.1">${fdate(nm.date)}</div>
         <div style="font-size:13px;color:var(--text2)">${nm.roster.filter(p=>p.status==='Confirmado').length} confirmados</div>
       </div>`:''}
     `;
@@ -1345,52 +1345,6 @@ function rDash(){
       ${barRow('% Goles',pctO+'%',pctB+'%',pctO,pctB)}
     </div>
 
-    </div>
-
-    <div class="card">
-      <div class="card-title">Historial 2026</div>
-      <div style="display:flex;flex-direction:column;gap:1px">
-        ${(()=>{
-          return [...allDash].reverse().map(m=>{
-            const w=winner(m);
-            const bg=w==='Naranjo'?'#fff3ed':w==='Azul'?'#eff6ff':'#f3f0ff';
-            const brd=w==='Naranjo'?'#fcd9b8':w==='Azul'?'#bfdbfe':'#c4b5fd';
-            const cn=w==='Naranjo'?'#ea6c0a':'#c4cdd9';
-            const cb=w==='Azul'?'#1d5fa5':'#c4cdd9';
-            const dotO=w==='Naranjo'?'#ea6c0a':'#c4cdd9';
-            const dotB=w==='Azul'?'#1d5fa5':'#c4cdd9';
-            const nmO=w==='Naranjo'?'#ea6c0a':'#8896b3';
-            const nmB=w==='Azul'?'#1d5fa5':'#8896b3';
-            if(m.cancelled){
-              return '<div style="display:flex;align-items:center;gap:5px;opacity:0.55">'
-                +'<div style="font-size:9px;color:#aab4c4;width:28px;flex-shrink:0;line-height:1">'+fdate(m.date)+'</div>'
-                +'<div style="flex:1;background:#fef2f2;border:1px solid #fecaca;border-radius:5px;padding:2px 7px;display:flex;align-items:center;justify-content:space-between">'
-                +'<span style="font-size:9px;font-weight:700;color:#dc2626">❌ Cancelado</span>'
-                +(m.cancelMotivo?'<span style="font-size:8px;color:#b91c1c;font-style:italic;max-width:100px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</span>':'')
-                +'</div>'
-                +'<div style="font-size:9px;color:#aab4c4;width:12px;text-align:right;flex-shrink:0">–</div>'
-                +'</div>';
-            }
-            return '<div style="display:flex;align-items:center;gap:5px">'
-              +'<div style="font-size:9px;color:#aab4c4;width:28px;flex-shrink:0;line-height:1">'+fdate(m.date)+'</div>'
-              +'<div style="flex:1;background:'+bg+';border:1px solid '+brd+';border-radius:5px;padding:2px 7px;display:flex;align-items:center;justify-content:space-between">'
-              +'<div style="display:flex;align-items:center;gap:3px">'
-              +'<span style="width:4px;height:4px;border-radius:50%;background:'+dotO+'"></span>'
-              +'<span style="font-size:9px;font-weight:600;color:'+nmO+'">NRJ</span>'
-              +'<span style="font-size:13px;font-weight:800;letter-spacing:-0.03em;color:'+cn+';margin-left:2px">'+m.orange+'</span>'
-              +'</div>'
-              +'<span style="font-size:9px;color:#d1d9e0;font-weight:600">–</span>'
-              +'<div style="display:flex;align-items:center;gap:3px">'
-              +'<span style="font-size:13px;font-weight:800;letter-spacing:-0.03em;color:'+cb+';margin-right:2px">'+m.blue+'</span>'
-              +'<span style="font-size:9px;font-weight:600;color:'+nmB+'">AZL</span>'
-              +'<span style="width:4px;height:4px;border-radius:50%;background:'+dotB+'"></span>'
-              +'</div>'
-              +'</div>'
-              +'<div style="font-size:9px;color:#aab4c4;width:12px;text-align:right;flex-shrink:0">'+m.players+'</div>'
-              +'</div>';
-          }).join('');
-        })()}
-      </div>
     </div>`;
 }
 
@@ -1493,7 +1447,7 @@ function rProximo(){
     <div class="page-header">
       <div><div class="page-eyebrow">Convocatoria</div><div class="page-title">Próximo Partido</div></div>
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span style="font-size:13px;color:var(--text2)">${fdate(nm.date)}</span>
+        <span style="font-size:26px;font-weight:800;color:var(--brand);letter-spacing:-0.02em">${fdate(nm.date)}</span>
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openEditPartidoModal()" style="color:var(--text2)">✏️ Editar</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="limpiarNomina()" style="color:var(--text2)">Limpiar nómina</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openFinalizarModal()" style="background:#1a202c;color:#fff;border-color:#1a202c">Finalizar partido</button>':''}
@@ -1582,7 +1536,7 @@ function rProximo(){
     <!-- BALANCE EQUIPOS DINÁMICO -->
     ${(()=>{
       const activos=r.filter(p=>p.status==='Confirmado'||p.status==='Reserva');
-      const getTeam=p=>p.galleta||p.team==='Flexible'?'Pendiente':(p.matchTeam||p.team||'Pendiente');
+      const getTeam=p=>p.matchTeam||(p.galleta||p.team==='Flexible'?'Pendiente':p.team||'Pendiente');
       const nNRJ=activos.filter(p=>getTeam(p)==='Naranjo').length;
       const nAZL=activos.filter(p=>getTeam(p)==='Azul').length;
       const nPend=activos.filter(p=>getTeam(p)==='Pendiente'||p.matchTeam==='Pendiente').length;
@@ -1619,6 +1573,7 @@ function rProximo(){
             +'<option'+(mt==='Azul'?' selected':'')+'>Azul</option>'
             +'<option'+(mt==='Pendiente'?' selected':'')+'>Pendiente</option>'
             +'</select>':('<span style="font-size:12px;font-weight:600;color:'+(mt==='Naranjo'?'var(--orange)':mt==='Azul'?'var(--blue)':'var(--text3)')+'">'+mt+'</span>'))
+            +(ROLE==='admin'?'<button onclick="removeFromRoster(&apos;'+p.pid+'&apos;)" title="Eliminar de la nómina" style="margin-left:6px;padding:2px 8px;border-radius:50%;border:1.5px solid #fecaca;background:#fff;color:#dc2626;cursor:pointer;font-size:12px;font-weight:700;line-height:1">✕</button>':'')
             +'</div>';
         }).join('')
         +'</div>'
@@ -2079,10 +2034,14 @@ function rPartidos(){
     <!-- TABLA -->
     <div class="card"><div class="table-wrap"><table>
       <thead><tr><th>Fecha</th><th style="text-align:center">Resultado</th><th style="text-align:center">Ganador</th><th></th></tr></thead>
-      <tbody>${[...getSeasonMatches(SEASON)].reverse().map(m=>`<tr style="cursor:pointer;${m.cancelled?'opacity:0.65':''}" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
+      <tbody>${[...getSeasonMatches(SEASON)].reverse().map(m=>m.cancelled?`<tr style="cursor:pointer;background:#f1f4f8;color:#8896b3" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
+        <td style="white-space:nowrap;font-style:italic">${fdate(m.date)}</td>
+        <td style="text-align:center;font-style:italic;color:#94a3b8">— sin juego —</td>
+        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()">Editar</button></td>':'<td></td>'}
+      </tr>`:`<tr style="cursor:pointer" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="color:var(--text2);white-space:nowrap">${fdate(m.date)}</td>
         <td style="text-align:center"><span style="color:var(--orange);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.orange}</span><span style="color:var(--text3);margin:0 5px">–</span><span style="color:var(--blue);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.blue}</span></td>
-        <td style="text-align:center">${m.cancelled?'<span class="badge" style="background:#fef2f2;color:#dc2626;border:1px solid #fecaca">Cancelado</span>':winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()">Editar</button></td>':'<td></td>'}
+        <td style="text-align:center">${winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()">Editar</button></td>':'<td></td>'}
       </tr>`).join('')}</tbody>
     </table></div></div>`;
 
@@ -2216,6 +2175,7 @@ function rCuotas(){
         </tr>`).join('')}</tbody>
       </table></div>
     </div>`;
+  document.getElementById('page-cuotas').insertAdjacentHTML('beforeend',renderGastosBlock());
   requestAnimationFrame(()=>{    // GRÁFICO B — Dona distribución cancha vs asado
     const cB=document.getElementById('chartCuotasB');
     if(cB){
@@ -2290,6 +2250,53 @@ function rCuotas(){
     }
   });
 }
+function removeFromRoster(pid){if(!confirm('¿Eliminar este jugador de la nómina?'))return;S.nextMatch.roster=S.nextMatch.roster.filter(p=>p.pid!==pid);rProximo();}
+function renderGastosBlock(){
+  const gs=S.gastos||[];
+  const total=gs.reduce((s,g)=>s+(g.monto||0),0);
+  return '<div class="card" style="margin-top:1rem">'+
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;flex-wrap:wrap;gap:8px">'+
+    '<div><div class="card-title" style="margin-bottom:0">Gastos</div><div style="font-size:11px;color:var(--text3);margin-top:3px">Se descuentan del fondo asado</div></div>'+
+    (ROLE==='admin'?'<button class="btn btn-sm btn-primary" onclick="openGastoModal()">+ Registrar gasto</button>':'')+
+    '</div>'+
+    (gs.length===0?'<div style="color:var(--text3);font-size:13px;text-align:center;padding:1rem">Sin gastos registrados</div>':
+      '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Monto</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'+
+      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2)">'+fdate(g.fecha)+'</td><td>'+g.glosa+'</td><td style="text-align:right;color:#dc2626;font-weight:700;white-space:nowrap">-'+clp(g.monto)+'</td>'+(ROLE==='admin'?'<td style="width:32px"><button onclick="removeGasto('+i+')" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
+      '<tr style="border-top:2px solid var(--border);background:var(--bg3)"><td colspan="2" style="font-weight:700;color:var(--text)">Total gastos</td><td style="text-align:right;color:#dc2626;font-weight:800;font-size:14px">-'+clp(total)+'</td>'+(ROLE==='admin'?'<td></td>':'')+'</tr>'+
+      '</tbody></table></div>')+
+    '</div>';
+}
+function openGastoModal(){
+  const today=new Date().toISOString().split('T')[0];
+  const html='<div class="modal-overlay open" id="modal-gasto-temp" onclick="if(event.target===this)closeGastoModal()">'+
+    '<div class="modal" style="max-width:380px">'+
+    '<div class="modal-title">Registrar gasto</div>'+
+    '<div class="form-row"><div class="form-group"><div class="form-label">Fecha</div><input class="input" type="date" id="g-fecha" value="'+today+'"></div>'+
+    '<div class="form-group"><div class="form-label">Monto ($)</div><input class="input" type="number" id="g-monto" placeholder="0"></div></div>'+
+    '<div class="form-group"><div class="form-label">Concepto + emoji</div><input class="input" type="text" id="g-glosa" placeholder="Ej: Compra Balón ⚽" maxlength="60"></div>'+
+    '<div class="modal-footer"><button class="btn" onclick="closeGastoModal()">Cancelar</button><button class="btn btn-primary" onclick="saveGasto()">Guardar</button></div>'+
+    '</div></div>';
+  const wrap=document.createElement('div');
+  wrap.innerHTML=html;
+  document.body.appendChild(wrap.firstChild);
+  setTimeout(()=>{var el=document.getElementById('g-glosa');if(el)el.focus();},50);
+}
+function closeGastoModal(){const m=document.getElementById('modal-gasto-temp');if(m)m.remove();}
+function saveGasto(){
+  const fecha=document.getElementById('g-fecha').value;
+  const monto=parseInt(document.getElementById('g-monto').value)||0;
+  const glosa=document.getElementById('g-glosa').value.trim();
+  if(!fecha||!monto||!glosa){alert('Completa fecha, monto y concepto');return;}
+  if(!S.gastos)S.gastos=[];
+  S.gastos.push({id:'gst'+Date.now(),fecha,monto,glosa});
+  closeGastoModal();
+  rCuotas();
+}
+function removeGasto(i){
+  if(!confirm('¿Eliminar este gasto?'))return;
+  S.gastos.splice(i,1);
+  rCuotas();
+}
 function markPaid(i){S.cuotasPend.splice(i,1);rCuotas()}
 
 function rReglas(){
@@ -2316,7 +2323,7 @@ function rReglas(){
 
 function rAsado(){
   const asadoMatches=getDash2026();
-  const total=asadoMatches.reduce((s,m)=>s+m.asado,0);
+  const totalBruto=asadoMatches.reduce((s,m)=>s+m.asado,0);const totalGastosAsado=(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);const total=totalBruto-totalGastosAsado;
   const meta=200000,pct=Math.min(100,Math.round((total/meta)*100));
   const menuItems=[
     {e:'🔥',l:'Carbón'},{e:'🌽',l:'Choclos'},{e:'🧀',l:'Queso parrilla'},
