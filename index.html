@@ -745,6 +745,7 @@ function adminBtn(action,label,cls){
   return'<button class="btn '+cls+'" onclick="'+action+'">'+label+'</button>';
 }
 function adminPayBtn(i){
+  if(ROLE!=='admin')return'';
   return'<button class="btn btn-sm btn-primary" onclick="markPaid('+i+')" style="background:#16a34a;color:#fff;border-color:#15803d">Pagado</button>';
 }
 function getCronicaCancelada(m){
@@ -998,6 +999,8 @@ function openCronicaModal(matchId){
       (flex.length>0?'<div style="margin-top:8px">'+renderTeam(flex,'#6b7a99','#f6f8fb','#e2e8f0','Pendientes / Flex / Galletas')+'</div>':'')+
       '</div>';
     contenido=contenido+plantelHTML;
+  }else if(ROLE==='admin'){
+    contenido=contenido+'<div style="margin-top:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99;margin-bottom:8px">Plantel del partido</div><div class="card" style="margin:0;text-align:center;padding:18px 14px;background:#fffbeb;border-color:#fde68a"><div style="font-size:13px;color:#92400e;margin-bottom:10px">Sin plantel guardado para este partido</div><button class="btn btn-primary btn-sm" onclick="openLoadRosterModal(\''+m.id+'\')" style="background:#16a34a;border-color:#15803d">Cargar nómina</button></div></div>';
   }
   document.getElementById('modal-cronica-content').innerHTML=contenido;
   document.getElementById('modal-cronica').classList.add('open');
@@ -1464,10 +1467,14 @@ function rProximo(){
   const mySkillBrd=mySkill==='arquero'?'#bbf7d0':mySkill==='ambos'?'#bbf7d0':'#e2e8f0';
 
   document.getElementById('page-proximo').innerHTML=`
-    <div class="page-header">
-      <div><div class="page-eyebrow">Convocatoria</div><div class="page-title">Próximo Partido</div></div>
-      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        ${dateBadgeHTML(nm.date)}
+    <div class="page-header" style="margin-bottom:14px;display:flex;align-items:center;gap:14px;flex-wrap:nowrap">
+      <div style="flex-shrink:0">${dateBadgeHTML(nm.date)}</div>
+      <div style="flex:1;min-width:0">
+        <div class="page-eyebrow">Convocatoria</div>
+        <div class="page-title" style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis">Próximo Partido</div>
+      </div>
+    </div>
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:14px">
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openEditPartidoModal()" style="color:var(--text2)">✏️ Editar</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="limpiarNomina()" style="color:var(--text2)">Limpiar nómina</button>':''}
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openFinalizarModal()" style="background:#1a202c;color:#fff;border-color:#1a202c">Finalizar partido</button>':''}
@@ -1991,7 +1998,7 @@ function rPartidos(){
   document.getElementById('page-partidos').innerHTML=`
     <div class="page-header">
       <div><div class="page-eyebrow">Temporada</div><div class="page-title">Estadísticas</div></div>
-      ${adminBtn('openModal()','+ Registrar','btn-primary')}
+      ${adminBtn('openModal()','+ Registrar','btn-primary')}${(function(){const n=(S.matches||[]).filter(m=>!m.cancelled&&(!m.roster||!m.roster.length)).length;return (ROLE==='admin'&&n>0)?'<button class="btn btn-sm" onclick="openBackfillModal()" style="margin-left:8px;background:#fffbeb;color:#92400e;border-color:#fde68a">Backfill plantel ('+n+')</button>':'';})()}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       ${['2025','2026','all'].map(s=>{
@@ -2282,9 +2289,9 @@ function renderGastosBlock(){
     (ROLE==='admin'?'<button class="btn btn-sm btn-primary" onclick="openGastoModal()">+ Registrar gasto</button>':'')+
     '</div>'+
     (gs.length===0?'<div style="color:var(--text3);font-size:13px;text-align:center;padding:1rem">Sin gastos registrados</div>':
-      '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th><th style="text-align:right">Monto</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'+
-      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2)">'+fdate(g.fecha)+'</td><td>'+g.glosa+'</td><td style="text-align:right;color:#dc2626;font-weight:700;white-space:nowrap">-'+clp(g.monto)+'</td>'+(ROLE==='admin'?'<td style="width:64px;text-align:right;white-space:nowrap"><button onclick="editGasto('+i+')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-right:4px">✏️</button><button onclick="removeGasto('+i+')" title="Eliminar" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
-      '<tr style="border-top:2px solid var(--border);background:var(--bg3)"><td colspan="2" style="font-weight:700;color:var(--text)">Total gastos</td><td style="text-align:right;color:#dc2626;font-weight:800;font-size:14px">-'+clp(total)+'</td>'+(ROLE==='admin'?'<td></td>':'')+'</tr>'+
+      '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'+
+      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2);vertical-align:top;padding-top:10px">'+fdate(g.fecha)+'</td><td><div>'+g.glosa+'</div><div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:2px">-'+clp(g.monto)+'</div></td>'+(ROLE==='admin'?'<td style="width:64px;text-align:right;white-space:nowrap"><button onclick="editGasto('+i+')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-right:4px">✏️</button><button onclick="removeGasto('+i+')" title="Eliminar" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
+      '<tr style="border-top:2px solid var(--border);background:var(--bg3)"><td colspan="1" style="font-weight:700;color:var(--text);white-space:nowrap">Total</td><td style="text-align:right;color:#dc2626;font-weight:800;font-size:14px">-'+clp(total)+'</td>'+(ROLE==='admin'?'<td></td>':'')+'</tr>'+
       '</tbody></table></div>')+
     '</div>';
 }
@@ -2333,7 +2340,7 @@ function removeGasto(i){
   S.gastos.splice(i,1);
   rCuotas();
 }
-function markPaid(i){S.cuotasPend.splice(i,1);rCuotas()}
+function markPaid(i){if(ROLE!=='admin')return;S.cuotasPend.splice(i,1);rCuotas()}
 
 function rReglas(){
   const reglas=[
@@ -2706,6 +2713,153 @@ document.addEventListener('DOMContentLoaded',function(){
   buildNav();setRole(ROLE);go('dashboard');updateAdminZone();
 });
 
+
+
+// ============== Load Roster Modal (D) ==============
+let __loadRosterMatchId=null;
+let __loadRosterAssigns={};
+function openLoadRosterModal(matchId){
+  if(ROLE!=='admin')return;
+  __loadRosterMatchId=matchId;
+  __loadRosterAssigns={};
+  const m=S.matches.find(x=>x.id===matchId);
+  if(m){
+    const matchFecha=fdate(m.date);
+    (S.cuotasPend||[]).filter(c=>c.fecha===matchFecha).forEach(c=>{
+      if(c.pid) __loadRosterAssigns[c.pid]='Flexible';
+    });
+  }
+  renderLoadRosterBody();
+  document.getElementById('modal-load-roster').classList.add('open');
+  document.getElementById('modal-load-roster-title').innerText = m? 'Cargar nómina · '+fdateYear(m.date) : 'Cargar nómina';
+}
+function closeLoadRosterModal(){
+  document.getElementById('modal-load-roster').classList.remove('open');
+  __loadRosterMatchId=null;
+  __loadRosterAssigns={};
+}
+function setLoadRosterTeam(pid,team){
+  if(team) __loadRosterAssigns[pid]=team;
+  else delete __loadRosterAssigns[pid];
+  renderLoadRosterBody();
+}
+function renderLoadRosterBody(){
+  const players=(S.players||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const counts={Naranjo:0,Azul:0,Flexible:0,Galleta:0};
+  Object.values(__loadRosterAssigns).forEach(t=>{if(counts[t]!=null)counts[t]++;});
+  const total=counts.Naranjo+counts.Azul+counts.Flexible+counts.Galleta;
+  const teams=['','Naranjo','Azul','Flexible','Galleta'];
+  const teamColor=t=>t==='Naranjo'?'#ea6c0a':t==='Azul'?'#1d5fa5':t==='Galleta'?'#b45309':'#6b7a99';
+  let html='<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;font-size:11px">'
+   +'<span style="background:#fff3ed;color:#ea6c0a;padding:3px 10px;border-radius:20px;border:1px solid #fcd9b8">Naranjo '+counts.Naranjo+'</span>'
+   +'<span style="background:#eff6ff;color:#1d5fa5;padding:3px 10px;border-radius:20px;border:1px solid #bfdbfe">Azul '+counts.Azul+'</span>'
+   +'<span style="background:#f6f8fb;color:#6b7a99;padding:3px 10px;border-radius:20px;border:1px solid #e2e8f0">Flexible '+counts.Flexible+'</span>'
+   +'<span style="background:#fffbeb;color:#b45309;padding:3px 10px;border-radius:20px;border:1px solid #fde68a">Galleta '+counts.Galleta+'</span>'
+   +'<span style="background:#f1f4f8;color:#1a202c;padding:3px 10px;border-radius:20px;border:1px solid #e2e8f0;font-weight:600">Total '+total+'</span>'
+   +'</div>'
+   +'<div style="font-size:11px;color:#92400e;background:#fffbeb;border:1px solid #fde68a;padding:8px 10px;border-radius:8px;margin-bottom:10px">Resaltado en amarillo viene de cuotas pendientes con esa fecha. Ajustá libremente.</div>';
+  html+='<div style="display:flex;flex-direction:column;gap:4px">';
+  players.forEach(p=>{
+    const cur=__loadRosterAssigns[p.pid]||'';
+    const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.pid&&c.fecha===fdate(mm.date));})();
+    const opts=teams.map(t=>'<option value="'+t+'" '+(t===cur?'selected':'')+'>'+(t||'— no participó —')+'</option>').join('');
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;'+(fromCuotas?'background:#fffbeb':'background:transparent')+'">'
+     +'<div style="flex:1;font-size:13px;color:'+(cur?teamColor(cur):'#6b7a99')+'">'+p.name+'</div>'
+     +'<select onchange="setLoadRosterTeam(\''+p.pid+'\',this.value)" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px">'+opts+'</select>'
+     +'</div>';
+  });
+  html+='</div>';
+  document.getElementById('modal-load-roster-body').innerHTML=html;
+}
+function saveLoadRoster(){
+  if(ROLE!=='admin')return;
+  if(!__loadRosterMatchId)return;
+  const m=S.matches.find(x=>x.id===__loadRosterMatchId);
+  if(!m)return;
+  const playersById={};(S.players||[]).forEach(p=>{playersById[p.pid]=p;});
+  const roster=[];
+  Object.keys(__loadRosterAssigns).forEach(pid=>{
+    const team=__loadRosterAssigns[pid];
+    const p=playersById[pid];if(!p||!team)return;
+    roster.push({pid:p.pid,name:p.name,matchTeam:team,team:p.team||team,skill:p.skill||'',galleta:!!p.galleta,status:'Confirmado'});
+  });
+  if(!roster.length){alert('No marcaste a nadie. Asignale equipo a al menos un jugador.');return;}
+  m.roster=roster;
+  if(window._saveToFirestore) window._saveToFirestore();
+  closeLoadRosterModal();
+  alert('Nómina guardada: '+roster.length+' jugadores.');
+  if(typeof rPartidos==='function') rPartidos();
+}
+
+// ============== Backfill modal (C) ==============
+let __backfillPlan=[];
+function matchesWithoutRoster(){
+  return (S.matches||[]).filter(m=>!m.cancelled && (!m.roster||!m.roster.length));
+}
+function buildBackfillPlan(){
+  const plan=[];
+  const playersById={};(S.players||[]).forEach(p=>{playersById[p.pid]=p;});
+  matchesWithoutRoster().forEach(m=>{
+    const matchFecha=fdate(m.date);
+    const derived=(S.cuotasPend||[]).filter(c=>c.fecha===matchFecha && c.pid && playersById[c.pid]).map(c=>{
+      const p=playersById[c.pid];
+      return {pid:p.pid,name:p.name,matchTeam:'Flexible',team:p.team||'Flexible',skill:p.skill||'',galleta:!!p.galleta,status:'Confirmado'};
+    });
+    plan.push({matchId:m.id,date:m.date,fecha:matchFecha,roster:derived});
+  });
+  return plan;
+}
+function openBackfillModal(){
+  if(ROLE!=='admin')return;
+  __backfillPlan=buildBackfillPlan();
+  renderBackfillBody();
+  document.getElementById('modal-backfill').classList.add('open');
+}
+function closeBackfillModal(){
+  document.getElementById('modal-backfill').classList.remove('open');
+  __backfillPlan=[];
+}
+function renderBackfillBody(){
+  if(!__backfillPlan.length){
+    document.getElementById('modal-backfill-body').innerHTML='<div style="padding:20px;text-align:center;color:#6b7a99">No hay partidos sin plantel.</div>';
+    document.getElementById('modal-backfill-save').style.display='none';
+    return;
+  }
+  document.getElementById('modal-backfill-save').style.display='';
+  let html='';
+  __backfillPlan.forEach(function(it,idx){
+    html+='<div class="card" style="margin:0 0 10px 0;padding:12px">'
+     +'<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px">'
+     +'<div style="font-weight:700;font-size:13px">'+fdateYear(it.date)+'</div>'
+     +'<div style="font-size:11px;color:#6b7a99">'+it.roster.length+' jugadores derivados</div>'
+     +'</div>';
+    if(it.roster.length===0){
+      html+='<div style="font-size:12px;color:#92400e;background:#fffbeb;padding:6px 10px;border-radius:6px">Sin cuotas pendientes para esta fecha — no hay datos para reconstruir.</div>';
+    }else{
+      html+='<div style="font-size:12px;color:#475569;display:flex;flex-wrap:wrap;gap:4px">';
+      it.roster.forEach(function(p){html+='<span style="background:#f6f8fb;border:1px solid #e2e8f0;padding:2px 8px;border-radius:14px">'+p.name+'</span>';});
+      html+='</div>';
+    }
+    html+='</div>';
+  });
+  document.getElementById('modal-backfill-body').innerHTML=html;
+}
+function saveBackfill(){
+  if(ROLE!=='admin')return;
+  let n=0;
+  __backfillPlan.forEach(function(it){
+    if(it.roster.length===0)return;
+    const m=S.matches.find(x=>x.id===it.matchId);
+    if(!m)return;
+    m.roster=it.roster.map(function(p){return Object.assign({},p);});
+    n++;
+  });
+  if(n>0 && window._saveToFirestore) window._saveToFirestore();
+  closeBackfillModal();
+  alert('Backfill aplicado a '+n+' partidos.');
+  if(typeof rPartidos==='function') rPartidos();
+}
+
 </script>
 </div>
 <nav class="bottom-nav" id="bottom-nav">
@@ -2731,5 +2885,30 @@ document.addEventListener('DOMContentLoaded',function(){
   </button>
 </nav>
 </div>
+
+<!-- Modal: Cargar nómina (D) -->
+<div class="modal-overlay" id="modal-load-roster">
+  <div class="modal" style="width:520px;max-height:88vh;display:flex;flex-direction:column">
+    <div class="modal-title" id="modal-load-roster-title">Cargar nómina</div>
+    <div id="modal-load-roster-body" style="overflow-y:auto;flex:1;min-height:0"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeLoadRosterModal()">Cancelar</button>
+      <button class="btn btn-primary" onclick="saveLoadRoster()">Guardar nómina</button>
+    </div>
+  </div>
+</div>
+<!-- Modal: Backfill (C) -->
+<div class="modal-overlay" id="modal-backfill">
+  <div class="modal" style="width:560px;max-height:88vh;display:flex;flex-direction:column">
+    <div class="modal-title">Backfill plantel desde cuotas</div>
+    <div style="font-size:12px;color:var(--text2);margin-bottom:10px">Para cada partido sin plantel se reconstruye desde las cuotas pendientes. Los jugadores quedan como <b>Flexible</b>; podés ajustar después con "Cargar nómina" en cada partido.</div>
+    <div id="modal-backfill-body" style="overflow-y:auto;flex:1;min-height:0"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeBackfillModal()">Cancelar</button>
+      <button class="btn btn-primary" id="modal-backfill-save" onclick="saveBackfill()">Confirmar y guardar</button>
+    </div>
+  </div>
+</div>
+
 </body>
 </html>
