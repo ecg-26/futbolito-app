@@ -381,6 +381,7 @@ window._loadData();
 <div class="modal-overlay" id="modal-galleta">
   <div class="modal">
     <div class="modal-title">Agregar galleta</div>
+    <div id="g-recurrentes-area" style="margin-bottom:10px"></div>
     <div class="form-group"><div class="form-label">Nombre</div><input class="input" type="text" id="g-name" placeholder="Nombre del invitado"></div>
     <div class="form-group"><div class="form-label">Skill</div>
       <div style="display:flex;gap:6px;margin-top:4px">
@@ -1914,10 +1915,30 @@ function saveAddJugadorNomina(){
   rProximo();
 }
 
+
+function prefillGalletaFromDB(gid){
+  const g=(S.galletas||[]).find(function(x){return x.id===gid;});
+  if(!g)return;
+  const ni=document.getElementById('g-name');if(ni)ni.value=g.name;
+  const oi=document.getElementById('g-owner');if(oi)oi.value=g.invById||'';
+  gSkill=g.skill||'jugador';
+  if(typeof selectGSkill==='function') selectGSkill(gSkill);
+  const rcb=document.getElementById('g-remember');if(rcb)rcb.checked=false;
+}
 function addGalleta(){
   gSkill='jugador'; gStatus='Confirmado';
   document.getElementById('g-name').value='';
   selectGSkill('jugador'); selectGStatus('Confirmado');
+  // Reset remember checkbox
+  const rcb=document.getElementById('g-remember');if(rcb)rcb.checked=true;
+  // Render chips of saved recurrentes
+  const ra=document.getElementById('g-recurrentes-area');
+  if(ra){
+    const gs=(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
+    if(gs.length){
+      ra.innerHTML='<div style="font-size:11px;color:#92400e;margin-bottom:4px;font-weight:600">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+gs.map(function(g){return '<button class="btn btn-sm" onclick="prefillGalletaFromDB(\''+g.id+'\')" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+g.name+'</button>';}).join('')+'</div>';
+    } else { ra.innerHTML=''; }
+  }
   // Poblar select con jugadores en nómina (no galletas)
   const ownerSel=document.getElementById('g-owner');
   // Mostrar todos los jugadores activos del sistema (no solo los de la nómina)
@@ -1960,6 +1981,15 @@ function saveGalleta(){
   const ownerName=ownerP?ownerP.name:'Admin';
   const ownerPid=ownerId;
   S.nextMatch.roster.push({pid,name,team:'Flexible',status:gStatus,galleta:true,invBy:ownerName,skill:gSkill,galletaOwner:ownerPid});
+  // Optionally persist to S.galletas DB
+  const remember=document.getElementById('g-remember');
+  if(remember && remember.checked){
+    const existing=(S.galletas||[]).find(function(g){return g.name.toLowerCase()===name.toLowerCase() && g.invById===(ownerId||'');});
+    if(!existing){
+      S.galletas=S.galletas||[];
+      S.galletas.push({id:'gd'+Date.now(),name:name,invById:ownerId||'',invBy:ownerName||'',skill:gSkill||'jugador',active:true});
+    }
+  }
   closeGalletaModal();
   rProximo();
 }
