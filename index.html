@@ -2513,7 +2513,7 @@ function rConfig(){
   const myPlayer=S.players[0];
   const __galletasHtml=(typeof rConfigGalletas==='function')?rConfigGalletas():'';
   if(ROLE==='admin'){
-    document.getElementById('page-config').innerHTML=`
+    document.getElementById('page-config').innerHTML=__galletasHtml+`
     <div class="page-header"><div><div class="page-eyebrow">Administración</div><div class="page-title">Configuración</div></div></div>
     <div class="card" style="margin-bottom:12px">
       <div class="row" style="margin-bottom:1rem">
