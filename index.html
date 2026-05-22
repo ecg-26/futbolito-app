@@ -2066,11 +2066,11 @@ function rPartidos(){
       <tbody>${[...getSeasonMatches(SEASON)].reverse().map(m=>m.cancelled?`<tr style="cursor:pointer;background:#f1f4f8;color:#8896b3" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="white-space:nowrap;font-style:italic">${fdate(m.date)}</td>
         <td style="text-align:center;font-style:italic;color:#94a3b8">— sin juego —</td>
-        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()">Editar</button></td>':'<td></td>'}
+        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
       </tr>`:`<tr style="cursor:pointer" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="color:var(--text2);white-space:nowrap">${fdate(m.date)}</td>
         <td style="text-align:center"><span style="color:var(--orange);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.orange}</span><span style="color:var(--text3);margin:0 5px">–</span><span style="color:var(--blue);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.blue}</span></td>
-        <td style="text-align:center">${winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()">Editar</button></td>':'<td></td>'}
+        <td style="text-align:center">${winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
       </tr>`).join('')}</tbody>
     </table></div></div>`;
 
