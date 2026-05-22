@@ -956,7 +956,7 @@ function openCronicaModal(matchId){
   const cr=getCronicaData(m,{og:0,bg:0,played:prevMatches.length},prevMatches);
   const avgO_m=(m.orange).toFixed(1);
   const diff=Math.abs(m.orange-m.blue);
-  const contenido=`<div style="border-top:3px solid ${cr.winColor};padding:1.125rem">
+  let contenido=`<div style="border-top:3px solid ${cr.winColor};padding:1.125rem">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
       <span style="font-size:10px;font-weight:500;text-transform:uppercase;letter-spacing:0.08em;color:#8896b3">Crónica · Fecha ${fechaN(m)} · ${fdateYear(m.date)}</span>
       <span style="background:${cr.winBg};color:${cr.winColor};border:0.5px solid ${cr.winBorder};border-radius:20px;padding:3px 10px;font-size:11px;font-weight:700">${w==='Empate'?'🤝 Empate':'🏆 '+cr.winName+' gana'}</span>
