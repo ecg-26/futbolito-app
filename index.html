@@ -236,9 +236,13 @@ tr:hover td{background:var(--bg3)}
 </style>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
-const db=getFirestore(app);
+// ignoreUndefinedProperties: Firestore rechaza el documento ENTERO si algún campo es
+// undefined (ej. roster.galletaOwner en un jugador que no es galleta). Sin esto,
+// guardar el resultado de un partido fallaba en silencio-ruidoso: consola con
+// FirebaseError, la app decía "no se pudo guardar" y nunca decía por qué.
+const db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 // _hydrated: sabemos qué hay en la nube (leímos el doc, o confirmamos que no existe).
 // _loaded: la app terminó de arrancar. Son cosas distintas a propósito:
 // escribir SIN estar hidratado pisaría los datos reales con los defaults del HTML.
