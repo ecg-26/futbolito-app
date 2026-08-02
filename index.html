@@ -239,7 +239,10 @@ import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/fireba
 import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
 const db=getFirestore(app);
-let _loaded=false,_pendingSave=false,_saveTimer=null,_lastWrite=null,_retry=0;
+// _hydrated: sabemos qué hay en la nube (leímos el doc, o confirmamos que no existe).
+// _loaded: la app terminó de arrancar. Son cosas distintas a propósito:
+// escribir SIN estar hidratado pisaría los datos reales con los defaults del HTML.
+let _loaded=false,_hydrated=false,_pendingSave=false,_saveTimer=null,_lastWrite=null,_retry=0,_inFlight=false,_dirty=false;
 // Píldora de estado: el guardado nunca vuelve a fallar en silencio.
 function _setSaveState(st){
   window.__saveSt=st;
@@ -276,28 +279,38 @@ function _applyRemote(d){
   if(Array.isArray(d.galletas))S.galletas=d.galletas;
 }
 async function _flushSave(){
-  if(!_loaded){_pendingSave=true;return}
+  // Sin hidratar NO se escribe: pisaríamos los datos reales con los defaults del HTML.
+  if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
+  if(_inFlight){_dirty=true;return}                  // ya hay una escritura en vuelo
   clearTimeout(_saveTimer);_saveTimer=null;
+  _inFlight=true;
   _setSaveState('saving');
-  var stamp=new Date().toISOString();
+  var stamp=new Date().toISOString(),prev=_lastWrite;
+  _lastWrite=stamp;                                  // antes del await: suprime también el eco optimista
   try{
     await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
-    _lastWrite=stamp;_retry=0;_setSaveState('saved');
+    _retry=0;_setSaveState('saved');
   }catch(e){
+    _lastWrite=prev;
     console.error('FS write:',e);_setSaveState('error');
     if(_retry<5){_retry++;_saveTimer=setTimeout(_flushSave,2000*_retry)}
+  }finally{
+    _inFlight=false;
+    if(_dirty){_dirty=false;_saveTimer=setTimeout(_flushSave,300)}
   }
 }
+function _flushQueued(){if(_hydrated&&_pendingSave){_pendingSave=false;window._saveToFirestore()}}
 window._flushSaveNow=_flushSave;
 // Para que Config pueda mostrar el estado real de la conexión con la base.
-window._dbState=function(){return{loaded:_loaded,lastWrite:_lastWrite,pending:!!_saveTimer,retry:_retry,status:window.__saveSt||'idle'}};
+window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite,pending:!!_saveTimer||_pendingSave||_inFlight,retry:_retry,status:window.__saveSt||'idle'}};
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
 function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
-// Agrupa ráfagas en una sola escritura. Si aún no cargó, NO descarta: encola.
+// Agrupa ráfagas en una sola escritura. Si aún no sabemos qué hay en la nube, NO descarta: encola.
 window._saveToFirestore=function(){
-  if(!_loaded){_pendingSave=true;return}
+  if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
+  _retry=0;                              // acción nueva del usuario: reinicia el backoff
   _setSaveState('saving');
   clearTimeout(_saveTimer);
   _saveTimer=setTimeout(_flushSave,300);
@@ -306,22 +319,30 @@ window._loadData=async()=>{
   const ref=doc(db,'futbolito','estado');
   try{
     const snap=await getDoc(ref);
-    if(snap.exists())_applyRemote(snap.data()); else _pendingSave=true;
-    onSnapshot(ref,s=>{
-      if(!s.exists())return;
-      const d=s.data();
-      if(d.updatedAt&&d.updatedAt===_lastWrite)return;   // eco de nuestra propia escritura
-      _applyRemote(d);
-      if(!_loaded)return;
-      try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}
-    });
+    if(snap.exists())_applyRemote(snap.data());
+    _hydrated=true;                      // sabemos qué hay: existe y lo aplicamos, o no existe
+    if(!snap.exists())_pendingSave=true; // doc nuevo: hay que sembrarlo
   }catch(e){
-    console.error('FS load:',e.message);_setSaveState('offline');
-  }finally{
-    _loaded=true;                        // SIEMPRE. Si la carga falla igual se puede guardar.
-    _initApp();
-    if(_pendingSave){_pendingSave=false;window._saveToFirestore()}
+    console.error('FS load:',e.message);_setSaveState('offline');   // _hydrated queda en false
   }
+  // El listener se registra SIEMPRE, aunque el getDoc haya fallado: así la app
+  // se recupera sola cuando vuelve la red, en vez de quedar ciega toda la sesión.
+  try{
+    onSnapshot(ref,s=>{
+      _hydrated=true;
+      if(s.exists()){
+        const d=s.data();
+        if(!(d.updatedAt&&d.updatedAt===_lastWrite)){   // ignora el eco de nuestra propia escritura
+          _applyRemote(d);
+          if(_loaded){try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}}
+        }
+      }
+      _flushQueued();                    // ya hidratados: sube lo que quedó encolado
+    },err=>{console.error('FS listen:',err);_setSaveState('offline')});
+  }catch(e){console.error('FS listen init:',e)}
+  _loaded=true;
+  _initApp();
+  _flushQueued();
 };
 window._initApp=_initApp;
 window._currentUser={name:'Admin'};
@@ -393,7 +414,7 @@ window._loadData();
     </div>
     <div class="form-row">
       <div class="form-group"><div class="form-label">Valor cancha ($)</div><input class="input" type="number" id="m-court" value="49000" oninput="updateCalc()"></div>
-      <div class="form-group"><div class="form-label">Cuota jugador</div><input class="input" type="number" id="m-fee" readonly></div>
+      <div class="form-group"><div class="form-label">Cuota jugador</div><input class="input" type="number" id="m-fee" step="500" oninput="updateCalc()"></div>
     </div>
     <div class="modal-calc" id="m-calc-note"></div>
     <div class="modal-footer">
@@ -755,7 +776,10 @@ const winner=m=>m.orange>m.blue?'Naranjo':m.blue>m.orange?'Azul':'Empate';
 const fechaN=m=>{if(!m||!m.date)return m&&m.id?m.id:0;const ms=S.matches.filter(x=>(x.season||2026)===(m.season||2026)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));const idx=ms.findIndex(x=>x.id===m.id);return idx>=0?idx+1:m.id;};
 const winBadge=m=>{const w=winner(m);return`<span class="badge badge-${w==='Naranjo'?'orange':w==='Azul'?'blue':'draw'}">${w}</span>`};
 const teamTag=t=>`<span class="tag-${t==='Naranjo'?'orange':t==='Azul'?'blue':'flex'}">${t}</span>`;
-const calcFee=(p,c,fee)=>{fee=parseInt(fee)||4000;p=parseInt(p)||0;c=parseInt(c)||0;return{fee,asado:Math.max(0,fee*p-c)}};
+// asado = lo que sobra después de pagar la cancha. Si es negativo, ese partido NO
+// cubrió la cancha y el fondo baja de verdad: no se clampea a 0, porque eso inflaría
+// el fondo escondiendo el déficit.
+const calcFee=(p,c,fee)=>{fee=parseInt(fee)||4000;p=parseInt(p)||0;c=parseInt(c)||0;return{fee,asado:fee*p-c}};
 
 function getSeasonMatches(season){
   if(!season||season==='all') return S.matches;
@@ -1457,7 +1481,12 @@ function getMatchPhase(dateStr,now){
   const fin=kick.getTime()+2*3600000; // el partido dura ~2h
   const msLeft=kick.getTime()-now.getTime();
   const hoursLeft=msLeft/3600000;
-  const daysSince=Math.max(0,Math.floor((now.getTime()-fin)/86400000));
+  // Días de calendario entre la fecha del partido y hoy, comparando medianoches
+  // locales. Si se midiera desde el fin del partido (22:00), el jueves a las 21:00
+  // todavía diría "jugado hoy".
+  const md=new Date(kick.getFullYear(),kick.getMonth(),kick.getDate());
+  const hd=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const daysSince=Math.max(0,Math.round((hd-md)/86400000));
   let key;
   if(hoursLeft>48)key='programado';
   else if(msLeft>0)key='inminente';
@@ -2164,7 +2193,7 @@ function rPartidos(){
   document.getElementById('page-partidos').innerHTML=`
     <div class="page-header">
       <div><div class="page-eyebrow">Temporada</div><div class="page-title">Estadísticas</div></div>
-      ${adminBtn('openModal()','+ Registrar','btn-primary')}${(function(){const n=(S.matches||[]).filter(m=>!m.cancelled&&(!m.roster||!m.roster.length)).length;return (ROLE==='admin'&&n>0)?'<button class="btn btn-sm" onclick="openBackfillModal()" style="margin-left:8px;background:#fffbeb;color:#92400e;border-color:#fde68a">Backfill plantel ('+n+')</button>':'';})()}
+      ${adminBtn('openModal()','+ Registrar','btn-primary')}${(function(){const n=matchesWithoutRoster().length;return (ROLE==='admin'&&n>0)?'<button class="btn btn-sm" onclick="openBackfillModal()" style="margin-left:8px;background:#fffbeb;color:#92400e;border-color:#fde68a">Backfill plantel ('+n+')</button>':'';})()}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       ${['2025','2026','all'].map(s=>{
@@ -2878,6 +2907,9 @@ function setName(id,name){
 function setTeam(id,team){S.players=S.players.map(p=>p.id===id?{...p,team}:p);rConfig()}
 
 function openModal(id=null,season=2026){
+  // 2025 es histórico: vive hardcodeado en MATCHES_2025 y nunca se persiste.
+  // Sin este aviso, editarlo decía "guardado" y se revertía al recargar.
+  if(id&&(season||2026)===2025){alert('Los partidos de 2025 son históricos y no se pueden editar.');return}
   S.editId=id;S.editSeason=season||2026;
   const m=id?S.matches.find(x=>x.id===id&&(x.season||2026)===S.editSeason):null;
   document.getElementById('modal-title').textContent=id?'Editar partido':'Registrar partido';
@@ -2886,6 +2918,7 @@ function openModal(id=null,season=2026){
   document.getElementById('m-orange').value=m?m.orange:0;
   document.getElementById('m-blue').value=m?m.blue:0;
   document.getElementById('m-court').value=m?m.court:49000;
+  document.getElementById('m-fee').value=(m&&m.fee)?m.fee:4000;   // conserva la cuota real del partido
   updateCalc();
   document.getElementById('modal-partido').classList.add('open');
   ['m-players','m-court'].forEach(x=>document.getElementById(x).oninput=updateCalc);
@@ -2893,9 +2926,9 @@ function openModal(id=null,season=2026){
 function updateCalc(){
   const p=parseInt(document.getElementById('m-players').value)||14;
   const c=parseInt(document.getElementById('m-court').value)||49000;
-  const{fee,asado}=calcFee(p,c);
-  document.getElementById('m-fee').value=fee;
-  document.getElementById('m-calc-note').textContent=p+' jugadores × '+clp(fee)+' = '+clp(fee*p)+' recaudado · '+clp(asado)+' va al asado';
+  const{fee,asado}=calcFee(p,c,parseInt(document.getElementById('m-fee').value)||0);
+  document.getElementById('m-calc-note').textContent=p+' jugadores × '+clp(fee)+' = '+clp(fee*p)+' recaudado · '
+    +(asado<0?('faltan '+clp(-asado)+' para cubrir la cancha'):(clp(asado)+' va al asado'));
 }
 function closeModal(){document.getElementById('modal-partido').classList.remove('open')}
 function saveMatch(){
@@ -2904,7 +2937,7 @@ function saveMatch(){
   const orange=parseInt(document.getElementById('m-orange').value)||0;
   const blue=parseInt(document.getElementById('m-blue').value)||0;
   const court=parseInt(document.getElementById('m-court').value)||49000;
-  const{fee,asado}=calcFee(players,court);
+  const{fee,asado}=calcFee(players,court,parseInt(document.getElementById('m-fee').value)||0);
   if(S.editId){const es=S.editSeason||2026;S.matches=S.matches.map(m=>m.id===S.editId&&(m.season||2026)===es?{...m,date,players,orange,blue,court,fee,asado,season:es}:m)}
   else{const nid2026=S.matches.filter(m=>(m.season||2026)===2026);const nid=nid2026.length?Math.max(...nid2026.map(m=>m.id))+1:1;S.matches.push({id:nid,date,players,orange,blue,court,fee,asado})}
   closeModal();rPartidos();
@@ -2999,6 +3032,7 @@ let __loadRosterAssigns={};
 let __loadRosterGalletas=[];
 function openLoadRosterModal(matchId,season){
   if(ROLE!=='admin')return;
+  if((parseInt(season)||2026)===2025){alert('Los partidos de 2025 son históricos: no se les puede cargar nómina.');return}
   __loadRosterMatchId=parseInt(matchId);
   __loadRosterSeason=parseInt(season)||2026;
   __loadRosterAssigns={};
@@ -3097,7 +3131,8 @@ function saveLoadRoster(){
 // ============== Backfill modal (C) ==============
 let __backfillPlan=[];
 function matchesWithoutRoster(){
-  return (S.matches||[]).filter(m=>!m.cancelled && (!m.roster||!m.roster.length));
+  // Solo 2026: los de 2025 son históricos, no se persisten y nunca tuvieron roster.
+  return (S.matches||[]).filter(m=>!m.cancelled && (m.season||2026)!==2025 && (!m.roster||!m.roster.length));
 }
 function buildBackfillPlan(){
   const plan=[];
@@ -3108,7 +3143,7 @@ function buildBackfillPlan(){
       const p=playersById[c.pid];
       return {pid:p.id,name:p.name,matchTeam:'Flexible',team:p.team||'Flexible',skill:p.skill||'',galleta:false,status:'Confirmado'};
     });
-    plan.push({matchId:m.id,date:m.date,fecha:matchFecha,roster:derived});
+    plan.push({matchId:m.id,season:m.season||2026,date:m.date,fecha:matchFecha,roster:derived});
   });
   return plan;
 }
@@ -3152,7 +3187,7 @@ function saveBackfill(){
   let n=0;
   __backfillPlan.forEach(function(it){
     if(it.roster.length===0)return;
-    const m=S.matches.find(x=>x.id===it.matchId);
+    const m=S.matches.find(x=>x.id===it.matchId&&(x.season||2026)===(it.season||2026));
     if(!m)return;
     m.roster=it.roster.map(function(p){return Object.assign({},p);});
     n++;
