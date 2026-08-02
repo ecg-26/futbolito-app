@@ -236,13 +236,118 @@ tr:hover td{background:var(--bg3)}
 </style>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { getFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
-const db=getFirestore(app);
-let _snap1=false;
+// ignoreUndefinedProperties: Firestore rechaza el documento ENTERO si algún campo es
+// undefined (ej. roster.galletaOwner en un jugador que no es galleta). Sin esto,
+// guardar el resultado de un partido fallaba en silencio-ruidoso: consola con
+// FirebaseError, la app decía "no se pudo guardar" y nunca decía por qué.
+const db=initializeFirestore(app,{ignoreUndefinedProperties:true});
+// _hydrated: sabemos qué hay en la nube (leímos el doc, o confirmamos que no existe).
+// _loaded: la app terminó de arrancar. Son cosas distintas a propósito:
+// escribir SIN estar hidratado pisaría los datos reales con los defaults del HTML.
+let _loaded=false,_hydrated=false,_pendingSave=false,_saveTimer=null,_lastWrite=null,_retry=0,_inFlight=false,_dirty=false;
+// Píldora de estado: el guardado nunca vuelve a fallar en silencio.
+function _setSaveState(st){
+  window.__saveSt=st;
+  if(typeof window.__cfgSyncEstado==='function')window.__cfgSyncEstado();
+  if(!document.body)return;
+  var el=document.getElementById('save-pill');
+  if(!el){
+    el=document.createElement('div');el.id='save-pill';
+    el.style.cssText='position:fixed;left:50%;transform:translateX(-50%);bottom:calc(84px + env(safe-area-inset-bottom,0px));z-index:400;padding:6px 13px;border-radius:20px;font-size:11px;font-weight:600;font-family:inherit;pointer-events:none;opacity:0;transition:opacity .25s;box-shadow:0 2px 10px rgba(0,0,0,.12)';
+    document.body.appendChild(el);
+  }
+  var map={saving:['Guardando…','#fffbeb','#92400e','#fde68a'],
+           saved:['Guardado','#f0fdf4','#166534','#bbf7d0'],
+           error:['No se pudo guardar · reintentando','#fef2f2','#991b1b','#fecaca'],
+           offline:['Sin conexión con la base','#fef2f2','#991b1b','#fecaca']};
+  var c=map[st];
+  if(!c){el.style.opacity='0';return;}
+  el.textContent=c[0];el.style.background=c[1];el.style.color=c[2];el.style.border='1px solid '+c[3];el.style.opacity='1';
+  clearTimeout(el._t);
+  if(st==='saved')el._t=setTimeout(function(){el.style.opacity='0'},1600);
+}
+// Aplica el documento remoto a S. Filtra 2025: ese histórico vive en MATCHES_2025 y nunca debe venir de la nube.
+function _applyRemote(d){
+  if(d.matches&&d.matches.length){
+    var m2026=d.matches.filter(function(m){return m.season!==2025}).map(function(m){return m.season?m:{...m,season:2026}});
+    S.matches=MATCHES_2025.concat(m2026);
+  }
+  if(d.players&&d.players.length)S.players=d.players;
+  if(d.nextMatch)S.nextMatch=d.nextMatch;
+  if(Array.isArray(d.cuotasPend))S.cuotasPend=d.cuotasPend;
+  if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;
+  if(d.reglas&&d.reglas.length)S.reglas=d.reglas;
+  if(Array.isArray(d.gastos))S.gastos=d.gastos;
+  if(Array.isArray(d.galletas))S.galletas=d.galletas;
+}
+async function _flushSave(){
+  // Sin hidratar NO se escribe: pisaríamos los datos reales con los defaults del HTML.
+  if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
+  if(_inFlight){_dirty=true;return}                  // ya hay una escritura en vuelo
+  clearTimeout(_saveTimer);_saveTimer=null;
+  _inFlight=true;
+  _setSaveState('saving');
+  var stamp=new Date().toISOString(),prev=_lastWrite;
+  _lastWrite=stamp;                                  // antes del await: suprime también el eco optimista
+  try{
+    await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
+    _retry=0;_setSaveState('saved');
+  }catch(e){
+    _lastWrite=prev;
+    console.error('FS write:',e);_setSaveState('error');
+    if(_retry<5){_retry++;_saveTimer=setTimeout(_flushSave,2000*_retry)}
+  }finally{
+    _inFlight=false;
+    if(_dirty){_dirty=false;_saveTimer=setTimeout(_flushSave,300)}
+  }
+}
+function _flushQueued(){if(_hydrated&&_pendingSave){_pendingSave=false;window._saveToFirestore()}}
+window._flushSaveNow=_flushSave;
+// Para que Config pueda mostrar el estado real de la conexión con la base.
+window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite,pending:!!_saveTimer||_pendingSave||_inFlight,retry:_retry,status:window.__saveSt||'idle'}};
+// El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
+addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
+addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
 function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
-window._saveToFirestore=async()=>{if(!_snap1)return;try{await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:new Date().toISOString()})}catch(e){console.error('FS write:',e)}};
-window._loadData=async()=>{try{const ref=doc(db,'futbolito','estado'),snap=await getDoc(ref);if(snap.exists()){const d=snap.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos}else{window._saveToFirestore()}onSnapshot(ref,s=>{if(!_snap1){_snap1=true;return}if(!s.exists())return;const d=s.data();if(d.matches&&d.matches.length){const m2026=d.matches.map(function(m){return m.season?m:{...m,season:2026};});S.matches=MATCHES_2025.concat(m2026);}if(d.players&&d.players.length)S.players=d.players;if(d.nextMatch)S.nextMatch=d.nextMatch;if(d.cuotasPend)S.cuotasPend=d.cuotasPend;if(typeof d.metaAsado==='number')S.metaAsado=d.metaAsado;if(d.reglas&&d.reglas.length)S.reglas=d.reglas;if(d.gastos)S.gastos=d.gastos;if(Array.isArray(d.galletas))S.galletas=d.galletas;try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}});_snap1=true}catch(e){console.error('FS load:',e.message)}finally{_initApp()}};
+// Agrupa ráfagas en una sola escritura. Si aún no sabemos qué hay en la nube, NO descarta: encola.
+window._saveToFirestore=function(){
+  if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
+  _retry=0;                              // acción nueva del usuario: reinicia el backoff
+  _setSaveState('saving');
+  clearTimeout(_saveTimer);
+  _saveTimer=setTimeout(_flushSave,300);
+};
+window._loadData=async()=>{
+  const ref=doc(db,'futbolito','estado');
+  try{
+    const snap=await getDoc(ref);
+    if(snap.exists())_applyRemote(snap.data());
+    _hydrated=true;                      // sabemos qué hay: existe y lo aplicamos, o no existe
+    if(!snap.exists())_pendingSave=true; // doc nuevo: hay que sembrarlo
+  }catch(e){
+    console.error('FS load:',e.message);_setSaveState('offline');   // _hydrated queda en false
+  }
+  // El listener se registra SIEMPRE, aunque el getDoc haya fallado: así la app
+  // se recupera sola cuando vuelve la red, en vez de quedar ciega toda la sesión.
+  try{
+    onSnapshot(ref,s=>{
+      _hydrated=true;
+      if(s.exists()){
+        const d=s.data();
+        if(!(d.updatedAt&&d.updatedAt===_lastWrite)){   // ignora el eco de nuestra propia escritura
+          _applyRemote(d);
+          if(_loaded){try{({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[S.view]()}catch(e){console.warn('rerender:',e)}}
+        }
+      }
+      _flushQueued();                    // ya hidratados: sube lo que quedó encolado
+    },err=>{console.error('FS listen:',err);_setSaveState('offline')});
+  }catch(e){console.error('FS listen init:',e)}
+  _loaded=true;
+  _initApp();
+  _flushQueued();
+};
 window._initApp=_initApp;
 window._currentUser={name:'Admin'};
 window._loadData();
@@ -313,7 +418,7 @@ window._loadData();
     </div>
     <div class="form-row">
       <div class="form-group"><div class="form-label">Valor cancha ($)</div><input class="input" type="number" id="m-court" value="49000" oninput="updateCalc()"></div>
-      <div class="form-group"><div class="form-label">Cuota jugador</div><input class="input" type="number" id="m-fee" readonly></div>
+      <div class="form-group"><div class="form-label">Cuota jugador</div><input class="input" type="number" id="m-fee" step="500" oninput="updateCalc()"></div>
     </div>
     <div class="modal-calc" id="m-calc-note"></div>
     <div class="modal-footer">
@@ -675,7 +780,10 @@ const winner=m=>m.orange>m.blue?'Naranjo':m.blue>m.orange?'Azul':'Empate';
 const fechaN=m=>{if(!m||!m.date)return m&&m.id?m.id:0;const ms=S.matches.filter(x=>(x.season||2026)===(m.season||2026)).slice().sort((a,b)=>(a.date||'').localeCompare(b.date||''));const idx=ms.findIndex(x=>x.id===m.id);return idx>=0?idx+1:m.id;};
 const winBadge=m=>{const w=winner(m);return`<span class="badge badge-${w==='Naranjo'?'orange':w==='Azul'?'blue':'draw'}">${w}</span>`};
 const teamTag=t=>`<span class="tag-${t==='Naranjo'?'orange':t==='Azul'?'blue':'flex'}">${t}</span>`;
-const calcFee=(p,c,fee)=>{fee=fee||4000;return{fee,asado:fee*p-c}};
+// asado = lo que sobra después de pagar la cancha. Si es negativo, ese partido NO
+// cubrió la cancha y el fondo baja de verdad: no se clampea a 0, porque eso inflaría
+// el fondo escondiendo el déficit.
+const calcFee=(p,c,fee)=>{fee=parseInt(fee)||4000;p=parseInt(p)||0;c=parseInt(c)||0;return{fee,asado:fee*p-c}};
 
 function getSeasonMatches(season){
   if(!season||season==='all') return S.matches;
@@ -947,7 +1055,7 @@ function openCronicaModal(matchId){
   }
   // Calcular racha hasta ese partido
   const idx=S.matches.indexOf(m);
-  const prevMatches=S.matches.slice(0,idx+1);
+  const prevMatches=S.matches.slice(0,idx+1).filter(function(x){return !x.cancelled&&(x.season||2026)===(m.season||2026);});
   const w=winner(m);
   let racha=0;
   for(let i=prevMatches.length-1;i>=0;i--){
@@ -1002,7 +1110,7 @@ function openCronicaModal(matchId){
       '</div>';
     contenido=contenido+plantelHTML;
   }else if(ROLE==='admin'){
-    contenido=contenido+'<div style="margin-top:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99;margin-bottom:8px">Plantel del partido</div><div class="card" style="margin:0;text-align:center;padding:18px 14px;background:#fffbeb;border-color:#fde68a"><div style="font-size:13px;color:#92400e;margin-bottom:10px">Sin plantel guardado para este partido</div><button class="btn btn-primary btn-sm" onclick="openLoadRosterModal(\''+m.id+'\')" style="background:#16a34a;border-color:#15803d">Cargar nómina</button></div></div>';
+    contenido=contenido+'<div style="margin-top:1.5rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99;margin-bottom:8px">Plantel del partido</div><div class="card" style="margin:0;text-align:center;padding:18px 14px;background:#fffbeb;border-color:#fde68a"><div style="font-size:13px;color:#92400e;margin-bottom:10px">Sin plantel guardado para este partido</div><button class="btn btn-primary btn-sm" onclick="openLoadRosterModal('+m.id+','+(m.season||2026)+')" style="background:#16a34a;border-color:#15803d">Cargar nómina</button></div></div>';
   }
   document.getElementById('modal-cronica-content').innerHTML=contenido;
   document.getElementById('modal-cronica').classList.add('open');
@@ -1217,17 +1325,7 @@ function rDash(){
   const nmConf=nm.roster.filter(p=>p.status==='Confirmado').length;
   const nmRes=nm.roster.filter(p=>p.status==='Reserva').length;
   const nmTotal=Math.min(14,nmConf+Math.min(nmRes,Math.max(0,14-nmConf)));
-  const nmCountdown=(()=>{
-    if(!nm.date)return'–';
-    const now=new Date();
-    const target=new Date(nm.date+'T20:00:00');
-    if(isNaN(target.getTime()))return'–';
-    const diff=target-now;
-    if(diff<=0)return'Hoy';
-    const d=Math.floor(diff/86400000);
-    const h=Math.floor((diff%86400000)/3600000);
-    return d>0?d+'d '+h+'h':h+'h';
-  })();
+  const nmCountdown=getCountdown(nm.date);
 
   const barRow=(lbl,vo,vb,po,pb)=>`
     <div style="display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid #f6f8fb">
@@ -1246,6 +1344,8 @@ function rDash(){
       <div class="page-title">Dashboard</div>
     </div></div>
 
+    ${matchAlertHTML(nm.date)}
+
     <!-- PRÓXIMO PARTIDO COMPACTO -->
     ${(()=>{
       const me=S.nextMatch.roster[0];
@@ -1261,7 +1361,7 @@ function rDash(){
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px">'
         +'<div style="display:flex;align-items:center;gap:7px">'
         +'<span style="font-size:var(--t-label);font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99">Próximo partido</span>'
-        +'<span style="background:'+stateBg+';color:'+stateC+';border:1px solid '+stateBrd+';border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700">'+stateLabel+(nmTotal<14?' · Faltan '+(14-nmTotal):'')+'</span>'
+        +'<span style="background:'+stateBg+';color:'+stateC+';border:1px solid '+stateBrd+';border-radius:20px;padding:2px 8px;font-size:10px;font-weight:700">'+stateLabel+(nmTotal<14&&(st2.phase==='programado'||st2.phase==='inminente')?' · Faltan '+(14-nmTotal):'')+'</span>'
         +'</div>'
         +'<span style="font-size:11px;color:#8896b3">⏱ '+nmCountdown+' · '+fdate(nm.date)+'</span>'
         +'</div>'
@@ -1374,47 +1474,104 @@ function rDash(){
 }
 
 
+// Fuente única de verdad temporal. Fases: sin-fecha, programado, inminente,
+// en-juego, pendiente-resultado, vencido.
+function getMatchPhase(dateStr,now){
+  now=now||new Date();
+  const vacio={key:'sin-fecha',msLeft:0,hoursLeft:0,daysSince:0};
+  if(!dateStr)return vacio;
+  const kick=new Date(dateStr+'T20:00:00');
+  if(isNaN(kick.getTime()))return vacio;
+  const fin=kick.getTime()+2*3600000; // el partido dura ~2h
+  const msLeft=kick.getTime()-now.getTime();
+  const hoursLeft=msLeft/3600000;
+  // Días de calendario entre la fecha del partido y hoy, comparando medianoches
+  // locales. Si se midiera desde el fin del partido (22:00), el jueves a las 21:00
+  // todavía diría "jugado hoy".
+  const md=new Date(kick.getFullYear(),kick.getMonth(),kick.getDate());
+  const hd=new Date(now.getFullYear(),now.getMonth(),now.getDate());
+  const daysSince=Math.max(0,Math.round((hd-md)/86400000));
+  let key;
+  if(hoursLeft>48)key='programado';
+  else if(msLeft>0)key='inminente';
+  else if(now.getTime()<fin)key='en-juego';
+  else if(daysSince<7)key='pendiente-resultado';
+  else key='vencido';
+  return{key:key,msLeft:msLeft,hoursLeft:hoursLeft,daysSince:daysSince};
+}
+
 function getCountdown(matchDate){
-  if(!matchDate)return'–';
-  const now=new Date();
-  const target=new Date(matchDate+'T20:00:00');
-  if(isNaN(target.getTime()))return'–';
-  const diff=target-now;
-  if(diff<=0)return'En curso';
-  const d=Math.floor(diff/86400000);
-  const h=Math.floor((diff%86400000)/3600000);
-  if(d>0)return`${d}d ${h}h`;
-  return`${h}h`;
+  const ph=getMatchPhase(matchDate);
+  if(ph.key==='sin-fecha')return'–';
+  if(ph.key==='en-juego')return'En curso';
+  if(ph.key==='pendiente-resultado')return ph.daysSince===0?'Jugado hoy':'Jugado hace '+ph.daysSince+'d';
+  if(ph.key==='vencido')return'Sin cerrar · '+ph.daysSince+'d';
+  const d=Math.floor(ph.msLeft/86400000);
+  const h=Math.floor((ph.msLeft%86400000)/3600000);
+  return d>0?d+'d '+h+'h':h+'h';
 }
 
 function getMatchState(conf,res,matchDate){
   // conf = confirmados, res = reservas, total efectivo para el partido
   const total=Math.min(14,conf+Math.min(res,Math.max(0,14-conf)));
   const conReservas=conf>=14&&res>0;
-  const now=new Date();
-  const hoursLeft=(new Date(matchDate+'T20:00:00')-now)/3600000;
+  const phase=getMatchPhase(matchDate);
+  const hoursLeft=phase.hoursLeft;
+  // El partido ya empezó o ya pasó: la convocatoria dejó de mandar
+  if(phase.key==='sin-fecha')return{key:'sin-fecha',phase:phase.key,label:'Sin fecha',color:'#6b7a99',bg:'#f6f8fb',border:'#e2e8f0',barColor:'#cbd5e1',tc:'#475569'};
+  if(phase.key==='en-juego')return{key:'en-juego',phase:phase.key,label:'En juego',color:'#0d9488',bg:'#f0fdfa',border:'#99f6e4',barColor:'#2dd4bf',tc:'#0f766e'};
+  if(phase.key==='pendiente-resultado')return{key:'pendiente-resultado',phase:phase.key,label:'Falta cerrar',color:'#b45309',bg:'#fffbeb',border:'#fde68a',barColor:'#f59e0b',tc:'#92400e'};
+  if(phase.key==='vencido')return{key:'vencido',phase:phase.key,label:'Sin cerrar',color:'#be123c',bg:'#fff1f2',border:'#fecdd3',barColor:'#fb7185',tc:'#9f1239'};
   // Alta convocatoria: 14 confirmados + reservas extra
-  if(conReservas)return{key:'alta',label:'Alta convocatoria',color:'#0d9488',bg:'#f0fdfa',border:'#99f6e4',barColor:'#2dd4bf',tc:'#0f766e'};
+  if(conReservas)return{key:'alta',phase:phase.key,label:'Alta convocatoria',color:'#0d9488',bg:'#f0fdfa',border:'#99f6e4',barColor:'#2dd4bf',tc:'#0f766e'};
   // Cupo ideal exacto: 14
-  if(conf>=14)return{key:'completo',label:'Confirmado',color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0',barColor:'#22c55e',tc:'#166534'};
+  if(conf>=14)return{key:'completo',phase:phase.key,label:'Confirmado',color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0',barColor:'#22c55e',tc:'#166534'};
   // Confirmado: 12-13 jugadores (se juega, hay espacio)
-  if(total>=12)return{key:'confirmado',label:'Confirmado',color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0',barColor:'#22c55e',tc:'#166534'};
+  if(total>=12)return{key:'confirmado',phase:phase.key,label:'Confirmado',color:'#15803d',bg:'#f0fdf4',border:'#bbf7d0',barColor:'#22c55e',tc:'#166534'};
   // En riesgo: menos de 12 Y faltan menos de 2 días (48h)
-  if(hoursLeft<48)return{key:'riesgo',label:'En riesgo',color:'#be123c',bg:'#fff1f2',border:'#fecdd3',barColor:'#fb7185',tc:'#9f1239'};
+  if(hoursLeft<48)return{key:'riesgo',phase:phase.key,label:'En riesgo',color:'#be123c',bg:'#fff1f2',border:'#fecdd3',barColor:'#fb7185',tc:'#9f1239'};
   // A tiempo: menos de 12 pero hay tiempo
-  return{key:'ok',label:'A tiempo',color:'#1d5fa5',bg:'#eff6ff',border:'#bfdbfe',barColor:'#60a5fa',tc:'#1e40af'};
+  return{key:'ok',phase:phase.key,label:'A tiempo',color:'#1d5fa5',bg:'#eff6ff',border:'#bfdbfe',barColor:'#60a5fa',tc:'#1e40af'};
 }
 
 function getStateMsg(conf,res,matchDate){
   const total=Math.min(14,conf+Math.min(res,Math.max(0,14-conf)));
   const conReservas=conf>=14&&res>0;
-  const now=new Date();
-  const hoursLeft=(new Date(matchDate+'T20:00:00')-now)/3600000;
+  const phase=getMatchPhase(matchDate);
+  const hoursLeft=phase.hoursLeft;
+  if(phase.key==='sin-fecha')return'Todavía no hay fecha definida para el próximo partido.';
+  if(phase.key==='en-juego')return'El partido está en curso. Cuando termine hay que registrar el resultado.';
+  if(phase.key==='pendiente-resultado')return'Este partido ya se jugó y aún no se cierra. Registra el resultado para mover las cuotas y el fondo de asado.';
+  if(phase.key==='vencido')return'Este partido quedó sin cerrar hace '+phase.daysSince+' días. La app queda congelada hasta que alguien registre el resultado o marque que no se jugó.';
   if(conReservas)return'Partido completo y con respaldo si alguien se baja.';
   if(conf>=14)return'Cupo ideal completo. Listo para jugar sin apuros.';
   if(total>=12)return'Se juega. Aún hay espacio para '+(14-total)+' jugador'+(14-total>1?'es':'')+' más.';
   if(hoursLeft<48)return'Estamos cerca del partido y aún no llegamos a 12. Agilizar confirmaciones y activar galletas.';
   return'Convocatoria abierta. Todavía hay tiempo para completar el mínimo.';
+}
+
+// Aviso: el partido ya se jugó y nadie lo cerró. Nunca cierra ni avanza solo (hay plata de por medio).
+function matchAlertHTML(dateStr){
+  const ph=getMatchPhase(dateStr);
+  if(ph.key!=='pendiente-resultado'&&ph.key!=='vencido')return'';
+  const urg=ph.key==='vencido';
+  const bg=urg?'#fff1f2':'#fffbeb', brd=urg?'#fecdd3':'#fde68a', c=urg?'#9f1239':'#92400e';
+  const cuando=ph.daysSince===0?'hoy':'hace '+ph.daysSince+' día'+(ph.daysSince===1?'':'s');
+  const txt=urg
+    ?'El partido del '+fdate(dateStr)+' se jugó '+cuando+' y sigue abierto. Las cuotas y el fondo de asado quedan congelados hasta que se cierre.'
+    :'El partido del '+fdate(dateStr)+' ya se jugó ('+cuando+') y todavía no se registra el resultado.';
+  const btns=ROLE!=='admin'?'':'<div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">'
+    +'<button class="btn btn-sm" onclick="openFinalizarModal()" style="background:#1a202c;color:#fff;border-color:#1a202c">Registrar resultado</button>'
+    +'<button class="btn btn-sm" onclick="openCancelarModal()" style="color:#dc2626;border-color:#fecaca">No se jugó</button>'
+    +'</div>';
+  return'<div style="background:'+bg+';border:1.5px solid '+brd+';border-radius:var(--radius-lg);padding:0.875rem 1rem;margin-bottom:12px">'
+    +'<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px">'
+    +'<span style="font-size:15px">⚠️</span>'
+    +'<span style="font-size:13px;font-weight:800;color:'+c+'">'+(urg?'Partido sin cerrar':'Falta registrar el resultado')+'</span>'
+    +'</div>'
+    +'<div style="font-size:12px;line-height:1.5;color:'+c+'">'+txt+'</div>'
+    +btns
+    +'</div>';
 }
 
 function rProximo(){
@@ -1448,7 +1605,7 @@ function rProximo(){
   const me=r[0];
   const state=getMatchState(conf,res,nm.date);
   const countdown=getCountdown(nm.date);
-  const stateMsg=getStateMsg(total,nm.date);
+  const stateMsg=getStateMsg(conf,res,nm.date);
 
   const myStatus=me?.status||'Sin confirmar';
   const myBadge=myStatus==='Confirmado'?`<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:50px;padding:5px 14px;font-size:13px;font-weight:600">Confirmado</span>`:
@@ -1483,6 +1640,8 @@ function rProximo(){
         ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openCancelarModal()" style="color:#dc2626;border-color:#fecaca">Cancelar partido</button>':''}
       </div>
     </div>
+
+    ${matchAlertHTML(nm.date)}
 
     <!-- TARJETA DE ESTADO -->
     <div style="background:${state.bg};border:1.5px solid ${state.border};border-radius:var(--radius-lg);padding:1.125rem 1.25rem;margin-bottom:1rem">
@@ -1691,9 +1850,12 @@ function openFinalizarModal(){
   document.getElementById('f-blue').value=0;
   document.getElementById('f-players').value=activos||14;
   document.getElementById('f-court').value=49000;
-  // Próximo miércoles por defecto
-  const next=new Date(nm.date?nm.date+'T12:00:00':new Date());
-  next.setDate(next.getDate()+7);
+  // Próximo miércoles por defecto — nunca una fecha ya pasada
+  const _hoy=new Date();_hoy.setHours(12,0,0,0);
+  const _base=nm.date?new Date(nm.date+'T12:00:00'):new Date(_hoy.getTime());
+  const next=_base.getTime()>_hoy.getTime()?_base:_hoy;
+  next.setHours(12,0,0,0);
+  do{next.setDate(next.getDate()+1);}while(next.getDay()!==3); // 3 = miércoles
   document.getElementById('f-next-date').value=next.toISOString().split('T')[0];
   updateFCalc();
   document.getElementById('modal-finalizar').classList.add('open');
@@ -1843,6 +2005,7 @@ function editAsadoPartido(id, season){
 }
 var _editReglaIdx=-1;
 function editRegla(i){
+  if(!S.reglas||!S.reglas[i])return;
   _editReglaIdx=i;
   document.getElementById('er-title').value=S.reglas[i].t;
   document.getElementById('er-desc').value=S.reglas[i].d;
@@ -2034,7 +2197,7 @@ function rPartidos(){
   document.getElementById('page-partidos').innerHTML=`
     <div class="page-header">
       <div><div class="page-eyebrow">Temporada</div><div class="page-title">Estadísticas</div></div>
-      ${adminBtn('openModal()','+ Registrar','btn-primary')}${(function(){const n=(S.matches||[]).filter(m=>!m.cancelled&&(!m.roster||!m.roster.length)).length;return (ROLE==='admin'&&n>0)?'<button class="btn btn-sm" onclick="openBackfillModal()" style="margin-left:8px;background:#fffbeb;color:#92400e;border-color:#fde68a">Backfill plantel ('+n+')</button>':'';})()}
+      ${adminBtn('openModal()','+ Registrar','btn-primary')}${(function(){const n=matchesWithoutRoster().length;return (ROLE==='admin'&&n>0)?'<button class="btn btn-sm" onclick="openBackfillModal()" style="margin-left:8px;background:#fffbeb;color:#92400e;border-color:#fde68a">Backfill plantel ('+n+')</button>':'';})()}
     </div>
     <div style="display:flex;gap:6px;margin-bottom:14px">
       ${['2025','2026','all'].map(s=>{
@@ -2101,11 +2264,11 @@ function rPartidos(){
       <tbody>${[...getSeasonMatches(SEASON)].reverse().map(m=>m.cancelled?`<tr style="cursor:pointer;background:#f1f4f8;color:#8896b3" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="white-space:nowrap;font-style:italic">${fdate(m.date)}</td>
         <td style="text-align:center;font-style:italic;color:#94a3b8">— sin juego —</td>
-        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
+        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
       </tr>`:`<tr style="cursor:pointer" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="color:var(--text2);white-space:nowrap">${fdate(m.date)}</td>
         <td style="text-align:center"><span style="color:var(--orange);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.orange}</span><span style="color:var(--text3);margin:0 5px">–</span><span style="color:var(--blue);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.blue}</span></td>
-        <td style="text-align:center">${winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
+        <td style="text-align:center">${winBadge(m)}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
       </tr>`).join('')}</tbody>
     </table></div></div>`;
 
@@ -2160,7 +2323,7 @@ function rPartidos(){
 
 function _dcInit(){var t=document.getElementById('dash-cronica-track');if(t)t.scrollLeft=t.scrollWidth;}
 function rCuotas(){
-  const cuotasMatches=getDash2026();
+  const cuotasMatches=getDash2026().filter(m=>!m.cancelled);
   const tp=S.cuotasPend.reduce((s,c)=>s+c.amount,0);
   const tr=cuotasMatches.reduce((s,m)=>s+m.fee*m.players,0);
   const ta=cuotasMatches.reduce((s,m)=>s+m.asado,0);
@@ -2171,7 +2334,7 @@ function rCuotas(){
     <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:12px">
       <div class="kpi kpi-slate"><div class="kpi-accent"></div><div class="kpi-label">Total recaudado</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(tr)}</div><div class="kpi-note">todas las fechas</div></div>
       <div class="kpi kpi-pink"><div class="kpi-accent"></div><div class="kpi-label">Fondo asado</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(ta)}</div><div class="kpi-note">acumulado</div></div>
-      <div class="kpi kpi-slate"><div class="kpi-accent"></div><div class="kpi-label">Total canchas</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(tc)}</div><div class="kpi-note">prom. ${clp(Math.round(tc/cuotasMatches.length))} c/u</div></div>
+      <div class="kpi kpi-slate"><div class="kpi-accent"></div><div class="kpi-label">Total canchas</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(tc)}</div><div class="kpi-note">prom. ${clp(cuotasMatches.length?Math.round(tc/cuotasMatches.length):0)} c/u</div></div>
       <div class="kpi ${tp>0?'kpi-orange':'kpi-slate'}"><div class="kpi-accent"></div><div class="kpi-label">Pendientes</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(tp)}</div><div class="kpi-note">${S.cuotasPend.length} jugadores</div></div>
     </div>
     <div class="card" style="margin-bottom:12px">
@@ -2242,7 +2405,7 @@ function rCuotas(){
   document.getElementById('page-cuotas').insertAdjacentHTML('beforeend',renderGastosBlock());
   requestAnimationFrame(()=>{    // GRÁFICO B — Dona distribución cancha vs asado
     const cB=document.getElementById('chartCuotasB');
-    if(cB){
+    if(cB&&cB.offsetParent!==null&&cB.offsetWidth>0){
       const dpr=window.devicePixelRatio||1,W=cB.offsetWidth,H=180;
       cB.width=W*dpr;cB.height=H*dpr;cB.style.width=W+'px';cB.style.height=H+'px';
       const ctx=cB.getContext('2d');ctx.scale(dpr,dpr);
@@ -2250,7 +2413,7 @@ function rCuotas(){
       const totalAsado=cuotasMatches.reduce((s,m)=>s+m.asado,0);
       const totalGastosD=(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);
       const total=totalCancha+totalAsado+totalGastosD;
-      const cx=W*0.38,cy=H/2,r=Math.min(cx,cy)-16,ri=r*0.52;
+      const cx=W*0.38,cy=H/2,r=Math.max(1,Math.min(cx,cy)-16),ri=Math.max(1,r*0.52);
       const segs=[{v:totalCancha,color:'#e2e8f0',label:'Canchas',tc:'#6b7a99'},{v:totalAsado,color:'#fbcfe8',label:'Asado',tc:'#db2777'},{v:totalGastosD,color:'#fecaca',label:'Gastos',tc:'#dc2626'}].filter(s=>s.v>0);
       let angle=-Math.PI/2;
       segs.forEach(s=>{
@@ -2279,14 +2442,14 @@ function rCuotas(){
     }
     // GRÁFICO C — Línea cuota índigo + promedio naranja
     const cC=document.getElementById('chartCuotasC');
-    if(cC){
+    if(cC&&cC.offsetParent!==null&&cC.offsetWidth>0&&cuotasMatches.length){
       const dpr=window.devicePixelRatio||1,W=cC.offsetWidth,H=150;
       cC.width=W*dpr;cC.height=H*dpr;cC.style.width=W+'px';cC.style.height=H+'px';
       const ctx=cC.getContext('2d');ctx.scale(dpr,dpr);
       const pad={t:10,r:16,b:28,l:10},cw=W-pad.l-pad.r,ch=H-pad.t-pad.b;
       const n=cuotasMatches.length,fees=cuotasMatches.map(m=>m.fee);
       const avg=fees.reduce((s,f)=>s+f,0)/n,maxV=Math.max(...fees)+1000;
-      const xp=i=>pad.l+i*(cw/(n-1)),yp=v=>pad.t+ch-(v/maxV)*ch;
+      const xp=i=>n>1?pad.l+i*(cw/(n-1)):pad.l+cw/2,yp=v=>pad.t+ch-(v/maxV)*ch;
       ctx.strokeStyle='#f1f4f8';ctx.lineWidth=1;
       [0,0.5,1].forEach(t=>{const y=pad.t+ch*t;ctx.beginPath();ctx.moveTo(pad.l,y);ctx.lineTo(pad.l+cw,y);ctx.stroke();});
       const grad=ctx.createLinearGradient(0,pad.t,0,pad.t+ch);
@@ -2378,17 +2541,21 @@ function removeGasto(i){
 }
 function markPaid(i){if(ROLE!=='admin')return;S.cuotasPend.splice(i,1);rCuotas()}
 
+// Reglas por defecto: SOLO se usan para sembrar S.reglas la primera vez.
+// La fuente de verdad es S.reglas, que es lo que el admin edita y se persiste.
+const REGLAS_DEFAULT=[
+  {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
+  {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
+  {t:'Equipos fijos',d:'Los equipos son Naranjo y Azul. Flexibles y galletas se asignan para balancear.'},
+  {t:'Galletas',d:'Cada jugador puede traer un invitado. La galleta paga la misma cuota que los titulares.'},
+  {t:'Reservas y bajas',d:'Las bajas deben avisarse antes del partido. El que se baja el día del partido igual paga.'},
+  {t:'Cuota del partido',d:'Se cobra al terminar. Cubre la cancha; el remanente va al fondo del asado.'},
+  {t:'Fondo del asado',d:'El excedente de cada fecha se acumula. El grupo vota cuándo y cómo se usa.'},
+  {t:'Marcador',d:'El admin registra el resultado al finalizar. Si hay duda, se vota entre los jugadores.'},
+];
 function rReglas(){
-  const reglas=[
-    {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
-    {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
-    {t:'Equipos fijos',d:'Los equipos son Naranjo y Azul. Flexibles y galletas se asignan para balancear.'},
-    {t:'Galletas',d:'Cada jugador puede traer un invitado. La galleta paga la misma cuota que los titulares.'},
-    {t:'Reservas y bajas',d:'Las bajas deben avisarse antes del partido. El que se baja el día del partido igual paga.'},
-    {t:'Cuota del partido',d:'Se cobra al terminar. Cubre la cancha; el remanente va al fondo del asado.'},
-    {t:'Fondo del asado',d:'El excedente de cada fecha se acumula. El grupo vota cuándo y cómo se usa.'},
-    {t:'Marcador',d:'El admin registra el resultado al finalizar. Si hay duda, se vota entre los jugadores.'},
-  ];
+  if(!S.reglas||!S.reglas.length)S.reglas=REGLAS_DEFAULT.map(r=>({t:r.t,d:r.d}));
+  const reglas=S.reglas;
   document.getElementById('page-reglas').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Reglamento</div><div class="page-title">Reglas del grupo</div></div></div>
     <div class="card">${reglas.map((r,i)=>`
@@ -2401,9 +2568,9 @@ function rReglas(){
 }
 
 function rAsado(){
-  const asadoMatches=getDash2026();
+  const asadoMatches=getDash2026().filter(m=>!m.cancelled);
   const totalBruto=asadoMatches.reduce((s,m)=>s+m.asado,0);const totalGastosAsado=(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);const total=totalBruto-totalGastosAsado;
-  const meta=200000,pct=Math.min(100,Math.round((total/meta)*100));
+  const meta=S.metaAsado||200000,pct=meta>0?Math.min(100,Math.round((total/meta)*100)):0;
   const menuItems=[
     {e:'🔥',l:'Carbón'},{e:'🌽',l:'Choclos'},{e:'🧀',l:'Queso parrilla'},
     {e:'🍗',l:'Pollo'},{e:'🥗',l:'Ensalada'},{e:'🔪',l:'Cuchillo'},
@@ -2424,7 +2591,7 @@ function rAsado(){
       <div class="bbq-amount">${clp(total)}</div>
       <div class="bbq-label">de ${clp(meta)} meta</div>
       <div class="bbq-progress"><div class="bbq-fill" style="width:${pct}%"></div></div>
-      <div style="font-size:12px;color:rgba(255,255,255,0.55)">${pct}% alcanzado · faltan ${clp(meta-total)}</div>
+      <div style="font-size:12px;color:rgba(255,255,255,0.55)">${pct}% alcanzado · faltan ${clp(Math.max(0,meta-total))}</div>
     </div>
     <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px">
@@ -2476,6 +2643,7 @@ function rAsado(){
     </div>`;
   requestAnimationFrame(()=>{    const canvas=document.getElementById('chartAsado');
     if(!canvas)return;
+    if(canvas.offsetParent===null||canvas.offsetWidth<=0||!acumulados.length)return;
     const dpr=window.devicePixelRatio||1,W=canvas.offsetWidth,H=220;
     canvas.width=W*dpr;canvas.height=H*dpr;canvas.style.width=W+'px';canvas.style.height=H+'px';
     const ctx=canvas.getContext('2d');ctx.scale(dpr,dpr);
@@ -2483,10 +2651,10 @@ function rAsado(){
     const pad={t:18,r:16,b:6,l:52};
     const cw=W-pad.l-pad.r,ch=mainH-pad.t-6;
     const n=acumulados.length;
-    const xp=i=>pad.l+i*(cw/(n-1));
+    const xp=i=>n>1?pad.l+i*(cw/(n-1)):pad.l+cw/2;
     const ypA=v=>pad.t+ch-(v/meta)*ch;
     const aportes=acumulados.map((a,i)=>i===0?a.acc:a.acc-acumulados[i-1].acc);
-    const maxAporte=Math.max(...aportes);
+    const maxAporte=Math.max(1,Math.max(...aportes));
     const avgAp=Math.round(aportes.reduce((s,v)=>s+v,0)/n);
     ctx.strokeStyle='#f1f4f8';ctx.lineWidth=1;
     [0,0.5,1].forEach(t=>{
@@ -2544,20 +2712,104 @@ function rAsado(){
   });
 }
 
+/* ===== CONFIG: estado de la base ===== */
+function cfgStamp(iso){
+  if(!iso)return '—';
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return '—';
+  var hh=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  var h=new Date();
+  var hoy=d.getFullYear()===h.getFullYear()&&d.getMonth()===h.getMonth()&&d.getDate()===h.getDate();
+  return hoy?('hoy '+hh):(fdate(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'))+' '+hh);
+}
+function cfgEstadoInner(){
+  var st={loaded:false,lastWrite:null,pending:false,retry:0,status:'desconocido'};
+  if(typeof window._dbState==='function'){try{st=window._dbState()}catch(e){}}
+  var online=(typeof navigator==='undefined')||navigator.onLine!==false;
+  var malo=(!online)||(!st.loaded)||st.status==='error'||st.status==='offline';
+  var guardando=(!malo)&&(st.pending||st.status==='saving');
+  var badge=malo?'<span class="badge badge-red">Sin conexión</span>'
+    :guardando?'<span class="badge badge-yellow">Guardando…</span>'
+    :'<span class="badge badge-green">Todo guardado</span>';
+  return '<div class="row" style="margin-bottom:1rem"><div class="card-title" style="margin-bottom:0">Estado de los datos</div>'+badge+'</div>'
+   +'<div class="stat-row"><span class="stat-label">Último guardado</span><span class="stat-val">'+cfgStamp(st.lastWrite)+'</span></div>'
+   +'<div class="stat-row"><span class="stat-label">Cambios sin subir</span><span class="stat-val">'+(st.pending?'Sí':'No')+'</span></div>'
+   +'<div class="stat-row"><span class="stat-label">Reintentos</span><span class="stat-val">'+(st.retry||0)+'</span></div>'
+   +(malo?'<div class="alert-yellow" style="margin-top:1rem;margin-bottom:0">Ojo: no se está guardando en la nube. Revisa la señal y aprieta Reintentar. Si sigue rojo, bájate el respaldo antes de cerrar.</div>':'')
+   +'<div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">'
+     +'<button class="btn btn-sm" onclick="cfgRetrySync()">Reintentar ahora</button>'
+     +'<button class="btn btn-sm" onclick="__cfgSyncEstado()">Actualizar</button>'
+   +'</div>';
+}
+function __cfgSyncEstado(){var b=document.getElementById('cfg-estado');if(b)b.innerHTML=cfgEstadoInner()}
+window.__cfgSyncEstado=__cfgSyncEstado;
+function cfgRetrySync(){
+  if(typeof window._flushSaveNow==='function')window._flushSaveNow();
+  else if(typeof window._saveToFirestore==='function')window._saveToFirestore();
+  setTimeout(__cfgSyncEstado,600);
+}
+/* ===== CONFIG: respaldo ===== */
+function cfgSnapshotJSON(){
+  return JSON.stringify({
+    _app:'futbolito',_temporada:2026,_bajadoEl:new Date().toISOString(),
+    players:S.players||[],
+    matches:(S.matches||[]).filter(function(m){return m.season!==2025}),
+    nextMatch:S.nextMatch||{},cuotasPend:S.cuotasPend||[],
+    gastos:S.gastos||[],galletas:S.galletas||[],
+    reglas:S.reglas||[],metaAsado:S.metaAsado||0
+  },null,2);
+}
+function cfgExportJSON(){
+  try{
+    var d=new Date();
+    var nombre='futbolito-'+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'.json';
+    var blob=new Blob([cfgSnapshotJSON()],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=nombre;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);a.remove()},500);
+  }catch(e){alert('No se pudo descargar el respaldo: '+e.message)}
+}
 function rConfig(){
-  const myPlayer=S.players[0];
+  const myPlayer=S.players&&S.players.length?S.players[0]:null;
   const __galletasHtml=(typeof rConfigGalletas==='function')?rConfigGalletas():'';
   if(ROLE==='admin'){
-    document.getElementById('page-config').innerHTML=__galletasHtml+`
+    const ps=(S.players||[]).slice().sort(function(a,b){
+      if(!!a.active!==!!b.active)return a.active?-1:1;
+      return (a.name||'').localeCompare(b.name||'');
+    });
+    const act=ps.filter(function(p){return p.active});
+    const nar=act.filter(function(p){return p.team==='Naranjo'}).length;
+    const azu=act.filter(function(p){return p.team==='Azul'}).length;
+    const fle=act.length-nar-azu;
+    const arq=act.filter(function(p){return p.skill==='arquero'||p.skill==='ambos'}).length;
+    const bajas=ps.length-act.length;
+    const n26=(S.matches||[]).filter(function(m){return (m.season||2026)===2026}).length;
+    const deuda=(S.cuotasPend||[]).reduce(function(s,c){return s+(+c.amount||0)},0);
+    document.getElementById('page-config').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Administración</div><div class="page-title">Configuración</div></div></div>
+
+    <div class="card" id="cfg-estado">${cfgEstadoInner()}</div>
+
     <div class="card" style="margin-bottom:12px">
-      <div class="row" style="margin-bottom:1rem">
-        <div class="card-title" style="margin-bottom:0">Jugadores</div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Plantel</div>
         <button class="btn btn-sm btn-primary" onclick="openJugadorModal()">+ Agregar</button>
       </div>
-      <table><thead><tr><th>Nombre</th><th>Equipo base</th><th>Skill</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${S.players.map(p=>`<tr>
-        <td><input class="input" style="padding:3px 7px;font-size:13px;font-weight:600;width:100%" value="${p.name}" onchange="setName('${p.id}',this.value)"></td>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <span class="badge badge-green">${act.length} activos</span>
+        ${bajas>0?`<span class="badge badge-neutral">${bajas} de baja</span>`:''}
+        <span class="tag-orange">Naranjo ${nar}</span>
+        <span class="tag-blue">Azul ${azu}</span>
+        <span class="tag-flex">Flexible ${fle}</span>
+        <span class="badge badge-${arq>=2?'green':'yellow'}">🧤 ${arq} arqueros</span>
+      </div>
+      ${arq<2?`<div class="alert-yellow">Hay ${arq} arquero(s) activo(s). Ojo al armar la nómina del miércoles.</div>`:''}
+      ${act.length<12?`<div class="alert-yellow">Solo ${act.length} jugadores activos. El mínimo para jugar son 12.</div>`:''}
+      <div class="table-wrap">
+      <table><thead><tr><th>Nombre</th><th>Equipo base</th><th>Posición</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${ps.map(p=>`<tr${p.active?'':' style="opacity:.55"'}>
+        <td><input class="input" style="padding:3px 7px;font-size:13px;font-weight:600;min-width:110px" value="${String(p.name||'').replace(/"/g,'&quot;')}" onchange="setName('${p.id}',this.value)"></td>
         <td><select class="input" style="padding:3px 7px;font-size:11px" onchange="setTeam('${p.id}',this.value)">
           <option value="Naranjo"${p.team==='Naranjo'?' selected':''}>🟠 Naranjo</option>
           <option value="Azul"${p.team==='Azul'?' selected':''}>🔵 Azul</option>
@@ -2568,14 +2820,42 @@ function rConfig(){
           <option value="ambos"${p.skill==='ambos'?' selected':''}>🧤⚽ Ambos</option>
           <option value="arquero"${p.skill==='arquero'?' selected':''}>🧤 Arquero</option>
         </select></td>
-        <td><span class="badge badge-${p.active?'green':'neutral'}">${p.active?'Activo':'Inactivo'}</span></td>
-        <td><button class="btn btn-sm" onclick="toggleP('${p.id}')">${p.active?'Dar de baja':'Reactivar'}</button></td>
+        <td><span class="badge badge-${p.active?'green':'neutral'}">${p.active?'Activo':'De baja'}</span></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-sm" onclick="toggleP('${p.id}')">${p.active?'Dar de baja':'Reactivar'}</button></td>
       </tr>`).join('')}</tbody></table>
+      </div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);margin-top:10px;line-height:1.6">Los que están de baja no aparecen al armar la nómina. No se borra nada: el historial y las cuotas quedan igual.</div>
     </div>
+
+    ${__galletasHtml}
+
     <div class="card">
       <div class="card-title">Parámetros</div>
-      <div><div class="form-label">Meta asado ($)</div><input class="input" type="number" value="${S.metaAsado||200000}" onchange="S.metaAsado=parseInt(this.value)||200000;_saveToFirestore();rConfig();rAsado();"></div>
+      <div class="form-group"><div class="form-label">Meta del fondo de asado ($)</div><input class="input" type="number" min="10000" step="10000" value="${S.metaAsado||200000}" onchange="cfgSetMeta(this.value)"></div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);line-height:1.6">Es la barra que se ve en la vista Asado.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Respaldo</div>
+      <div class="stat-row"><span class="stat-label">Jugadores</span><span class="stat-val">${(S.players||[]).length}</span></div>
+      <div class="stat-row"><span class="stat-label">Partidos 2026</span><span class="stat-val">${n26}</span></div>
+      <div class="stat-row"><span class="stat-label">Cuotas pendientes</span><span class="stat-val">${(S.cuotasPend||[]).length} · ${clp(deuda)}</span></div>
+      <div class="stat-row"><span class="stat-label">Gastos del asado</span><span class="stat-val">${(S.gastos||[]).length}</span></div>
+      <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" onclick="cfgExportJSON()">Descargar respaldo</button>
+      </div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);margin-top:10px;line-height:1.6">Los partidos de 2025 no van en el archivo: ésos viven fijos dentro de la app.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Acceso admin</div>
+      <div class="stat-row"><span class="stat-label">Sesión</span><span class="stat-val"><span class="badge badge-green">Admin</span></span></div>
+      <div style="display:flex;gap:8px;margin-top:1rem"><button class="btn btn-sm" onclick="adminLogout()">Salir de admin</button></div>
     </div>`;
+  } else if(!myPlayer){
+    document.getElementById('page-config').innerHTML=`
+    <div class="page-header"><div><div class="page-eyebrow">Configuración</div><div class="page-title">Sin datos</div></div></div>
+    <div class="card"><div class="empty">Todavía no hay jugadores cargados.</div></div>`;
   } else {
     const sk=myPlayer.skill||'jugador';
     const teamColor=myPlayer.team==='Naranjo'?'var(--orange-soft)':myPlayer.team==='Azul'?'var(--blue-soft)':'#f6f8fb';
@@ -2600,20 +2880,49 @@ function rConfig(){
     </div>`;
   }
 }
-function toggleP(id){S.players=S.players.map(p=>p.id===id?{...p,active:!p.active}:p);rConfig()}
+function cfgSetMeta(v){
+  var n=parseInt(v,10);
+  if(isNaN(n)||n<10000){alert('La meta tiene que ser de al menos $10.000.');rConfig();return}
+  S.metaAsado=n;
+  if(window._saveToFirestore)window._saveToFirestore();
+  rConfig();if(typeof rAsado==='function')rAsado();
+}
+function toggleP(id){
+  var p=(S.players||[]).find(function(x){return x.id===id});
+  if(!p)return;
+  if(p.active){
+    var enNomina=((S.nextMatch&&S.nextMatch.roster)||[]).some(function(r){return r.pid===id});
+    var pend=(S.cuotasPend||[]).filter(function(c){return c.pid===id}).length;
+    var msg='¿Dar de baja a '+p.name+'?\n\nDeja de aparecer al armar la nómina. No se borra nada del historial.';
+    if(enNomina)msg+='\n\nOJO: está en la nómina del próximo partido. Sácalo a mano si no juega.';
+    if(pend)msg+='\n\nOJO: tiene '+pend+' cuota(s) pendiente(s). La deuda no se borra.';
+    if(!confirm(msg))return;
+  }
+  S.players=S.players.map(p=>p.id===id?{...p,active:!p.active}:p);rConfig()
+}
 function setSkill(id,sk){S.players=S.players.map(p=>p.id===id?{...p,skill:sk}:p);rConfig()}
-function setName(id,name){S.players=S.players.map(p=>p.id===id?{...p,name}:p)}
+function setName(id,name){
+  var n=String(name||'').trim();
+  if(!n){alert('El nombre no puede quedar vacío.');rConfig();return}
+  var dup=(S.players||[]).some(function(p){return p.id!==id&&(p.name||'').toLowerCase()===n.toLowerCase()});
+  if(dup){alert('Ya hay otro jugador que se llama "'+n+'".');rConfig();return}
+  S.players=S.players.map(p=>p.id===id?{...p,name:n}:p)
+}
 function setTeam(id,team){S.players=S.players.map(p=>p.id===id?{...p,team}:p);rConfig()}
 
-function openModal(id=null){
-  S.editId=id;
-  const m=id?S.matches.find(x=>x.id===id):null;
+function openModal(id=null,season=2026){
+  // 2025 es histórico: vive hardcodeado en MATCHES_2025 y nunca se persiste.
+  // Sin este aviso, editarlo decía "guardado" y se revertía al recargar.
+  if(id&&(season||2026)===2025){alert('Los partidos de 2025 son históricos y no se pueden editar.');return}
+  S.editId=id;S.editSeason=season||2026;
+  const m=id?S.matches.find(x=>x.id===id&&(x.season||2026)===S.editSeason):null;
   document.getElementById('modal-title').textContent=id?'Editar partido':'Registrar partido';
   document.getElementById('m-date').value=m?m.date:S.nextMatch.date;
   document.getElementById('m-players').value=m?m.players:14;
   document.getElementById('m-orange').value=m?m.orange:0;
   document.getElementById('m-blue').value=m?m.blue:0;
   document.getElementById('m-court').value=m?m.court:49000;
+  document.getElementById('m-fee').value=(m&&m.fee)?m.fee:4000;   // conserva la cuota real del partido
   updateCalc();
   document.getElementById('modal-partido').classList.add('open');
   ['m-players','m-court'].forEach(x=>document.getElementById(x).oninput=updateCalc);
@@ -2621,9 +2930,9 @@ function openModal(id=null){
 function updateCalc(){
   const p=parseInt(document.getElementById('m-players').value)||14;
   const c=parseInt(document.getElementById('m-court').value)||49000;
-  const{fee,asado}=calcFee(p,c);
-  document.getElementById('m-fee').value=fee;
-  document.getElementById('m-calc-note').textContent=p+' jugadores × '+clp(fee)+' = '+clp(fee*p)+' recaudado · '+clp(asado)+' va al asado';
+  const{fee,asado}=calcFee(p,c,parseInt(document.getElementById('m-fee').value)||0);
+  document.getElementById('m-calc-note').textContent=p+' jugadores × '+clp(fee)+' = '+clp(fee*p)+' recaudado · '
+    +(asado<0?('faltan '+clp(-asado)+' para cubrir la cancha'):(clp(asado)+' va al asado'));
 }
 function closeModal(){document.getElementById('modal-partido').classList.remove('open')}
 function saveMatch(){
@@ -2632,12 +2941,12 @@ function saveMatch(){
   const orange=parseInt(document.getElementById('m-orange').value)||0;
   const blue=parseInt(document.getElementById('m-blue').value)||0;
   const court=parseInt(document.getElementById('m-court').value)||49000;
-  const{fee,asado}=calcFee(players,court);
-  if(S.editId){S.matches=S.matches.map(m=>m.id===S.editId&&(m.season||2026)===2026?{...m,date,players,orange,blue,court,fee,asado,season:2026}:m)}
+  const{fee,asado}=calcFee(players,court,parseInt(document.getElementById('m-fee').value)||0);
+  if(S.editId){const es=S.editSeason||2026;S.matches=S.matches.map(m=>m.id===S.editId&&(m.season||2026)===es?{...m,date,players,orange,blue,court,fee,asado,season:es}:m)}
   else{const nid2026=S.matches.filter(m=>(m.season||2026)===2026);const nid=nid2026.length?Math.max(...nid2026.map(m=>m.id))+1:1;S.matches.push({id:nid,date,players,orange,blue,court,fee,asado})}
   closeModal();rPartidos();
 }
-function editMatch(id){go('partidos');setTimeout(()=>openModal(id),50)}
+function editMatch(id,season){go('partidos');setTimeout(()=>openModal(id,season||2026),50)}
 let jSkill='jugador';
 function selectJSkill(sk){
   jSkill=sk;
@@ -2667,42 +2976,10 @@ function saveJugador(){
 }
 
 
-// USUARIOS — email:contraseña:nombre:rol
-const USERS={
-  'elias@futbolito.cl':  {pass:'elias2026',  name:'Elías',   role:'admin'},
-  'juan@futbolito.cl':   {pass:'juan2026',   name:'Juan',    role:'user'},
-  'nico@futbolito.cl':   {pass:'nico2026',   name:'Nico',    role:'user'},
-  'pablo@futbolito.cl':  {pass:'pablo2026',  name:'Pablo',   role:'user'},
-  'cristian@futbolito.cl':{pass:'cristian2026',name:'Cristian',role:'user'},
-  'seba@futbolito.cl':   {pass:'seba2026',   name:'Seba',    role:'user'},
-  'tomas@futbolito.cl':  {pass:'tomas2026',  name:'Tomás',   role:'user'},
-  'rodrigo@futbolito.cl':{pass:'rodrigo2026',name:'Rodrigo', role:'user'},
-  'admin':               {pass:atob('Y2hhbXAyNg=='), name:'Admin',   role:'admin'},
-};
-function doLogin(){
-  const email=document.getElementById('login-email').value.trim().toLowerCase();
-  const pass=document.getElementById('login-pass').value;
-  const err=document.getElementById('login-error');
-  const user=USERS[email];
-  if(!user||user.pass!==pass){err.style.display='block';return;}
-  err.style.display='none';
-  window._currentUser={email,name:user.name,role:user.role};
-  ROLE=user.role==='admin'?'admin':'user';
-  const n=document.getElementById('user-name');
-  if(n)n.textContent=user.name;
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('app').style.display='block';
-  window._loadData();
-}
-function doLogout(){
-  window._currentUser=null;
-  document.getElementById('login-screen').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('login-email').value='';
-  document.getElementById('login-pass').value='';
-}
-
-/* Firebase init after auth */
+// Nota: acá vivía un bloque USERS con 9 contraseñas en texto plano, más doLogin()
+// y doLogout(). Era código muerto: no existe #login-screen en el HTML y nadie los
+// llamaba, así que esas claves no servían para entrar — solo quedaban legibles en
+// "ver código fuente" de un repo público. El único acceso real es ADMIN_PASS.
 
 // Admin login
 var ADMIN_PASS=atob('YWRtaW4xMjM0');
@@ -2754,14 +3031,17 @@ document.addEventListener('DOMContentLoaded',function(){
 
 // ============== Load Roster Modal (D) ==============
 let __loadRosterMatchId=null;
+let __loadRosterSeason=2026;
 let __loadRosterAssigns={};
 let __loadRosterGalletas=[];
-function openLoadRosterModal(matchId){
+function openLoadRosterModal(matchId,season){
   if(ROLE!=='admin')return;
-  __loadRosterMatchId=matchId;
+  if((parseInt(season)||2026)===2025){alert('Los partidos de 2025 son históricos: no se les puede cargar nómina.');return}
+  __loadRosterMatchId=parseInt(matchId);
+  __loadRosterSeason=parseInt(season)||2026;
   __loadRosterAssigns={};
   __loadRosterGalletas=[];
-  const m=S.matches.find(x=>x.id===matchId);
+  const m=S.matches.find(x=>x.id===__loadRosterMatchId&&(x.season||2026)===__loadRosterSeason);
   if(m){
     const matchFecha=fdate(m.date);
     (S.cuotasPend||[]).filter(c=>c.fecha===matchFecha).forEach(c=>{
@@ -2784,7 +3064,7 @@ function setLoadRosterTeam(pid,team){
   renderLoadRosterBody();
 }
 function renderLoadRosterBody(){
-  const players=(S.players||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const players=(S.players||[]).filter(p=>p.active!==false).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const counts={Naranjo:0,Azul:0,Flexible:0,Galleta:0};
   Object.values(__loadRosterAssigns).forEach(t=>{if(counts[t]!=null)counts[t]++;});
   const total=counts.Naranjo+counts.Azul+counts.Flexible+counts.Galleta;
@@ -2801,7 +3081,7 @@ function renderLoadRosterBody(){
   html+='<div style="display:flex;flex-direction:column;gap:4px">';
   players.forEach(p=>{
     const cur=__loadRosterAssigns[p.id]||'';
-    const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.id&&c.fecha===fdate(mm.date));})();
+    const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId&&(x.season||2026)===__loadRosterSeason);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.id&&c.fecha===fdate(mm.date));})();
     const opts=teams.map(t=>'<option value="'+t+'" '+(t===cur?'selected':'')+'>'+(t||'— no participó —')+'</option>').join('');
     html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;'+(fromCuotas?'background:#fffbeb':'background:transparent')+'">'
      +'<div style="flex:1;font-size:13px;color:'+(cur?teamColor(cur):'#6b7a99')+'">'+p.name+'</div>'
@@ -2831,7 +3111,7 @@ function renderLoadRosterBody(){
 function saveLoadRoster(){
   if(ROLE!=='admin')return;
   if(!__loadRosterMatchId)return;
-  const m=S.matches.find(x=>x.id===__loadRosterMatchId);
+  const m=S.matches.find(x=>x.id===__loadRosterMatchId&&(x.season||2026)===__loadRosterSeason);
   if(!m)return;
   const playersById={};(S.players||[]).forEach(p=>{playersById[p.id]=p;});
   const roster=[];
@@ -2855,7 +3135,8 @@ function saveLoadRoster(){
 // ============== Backfill modal (C) ==============
 let __backfillPlan=[];
 function matchesWithoutRoster(){
-  return (S.matches||[]).filter(m=>!m.cancelled && (!m.roster||!m.roster.length));
+  // Solo 2026: los de 2025 son históricos, no se persisten y nunca tuvieron roster.
+  return (S.matches||[]).filter(m=>!m.cancelled && (m.season||2026)!==2025 && (!m.roster||!m.roster.length));
 }
 function buildBackfillPlan(){
   const plan=[];
@@ -2866,7 +3147,7 @@ function buildBackfillPlan(){
       const p=playersById[c.pid];
       return {pid:p.id,name:p.name,matchTeam:'Flexible',team:p.team||'Flexible',skill:p.skill||'',galleta:false,status:'Confirmado'};
     });
-    plan.push({matchId:m.id,date:m.date,fecha:matchFecha,roster:derived});
+    plan.push({matchId:m.id,season:m.season||2026,date:m.date,fecha:matchFecha,roster:derived});
   });
   return plan;
 }
@@ -2910,7 +3191,7 @@ function saveBackfill(){
   let n=0;
   __backfillPlan.forEach(function(it){
     if(it.roster.length===0)return;
-    const m=S.matches.find(x=>x.id===it.matchId);
+    const m=S.matches.find(x=>x.id===it.matchId&&(x.season||2026)===(it.season||2026));
     if(!m)return;
     m.roster=it.roster.map(function(p){return Object.assign({},p);});
     n++;
