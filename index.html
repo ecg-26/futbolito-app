@@ -242,6 +242,8 @@ const db=getFirestore(app);
 let _loaded=false,_pendingSave=false,_saveTimer=null,_lastWrite=null,_retry=0;
 // Píldora de estado: el guardado nunca vuelve a fallar en silencio.
 function _setSaveState(st){
+  window.__saveSt=st;
+  if(typeof window.__cfgSyncEstado==='function')window.__cfgSyncEstado();
   if(!document.body)return;
   var el=document.getElementById('save-pill');
   if(!el){
@@ -287,6 +289,8 @@ async function _flushSave(){
   }
 }
 window._flushSaveNow=_flushSave;
+// Para que Config pueda mostrar el estado real de la conexión con la base.
+window._dbState=function(){return{loaded:_loaded,lastWrite:_lastWrite,pending:!!_saveTimer,retry:_retry,status:window.__saveSt||'idle'}};
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
@@ -1968,6 +1972,7 @@ function editAsadoPartido(id, season){
 }
 var _editReglaIdx=-1;
 function editRegla(i){
+  if(!S.reglas||!S.reglas[i])return;
   _editReglaIdx=i;
   document.getElementById('er-title').value=S.reglas[i].t;
   document.getElementById('er-desc').value=S.reglas[i].d;
@@ -2503,17 +2508,21 @@ function removeGasto(i){
 }
 function markPaid(i){if(ROLE!=='admin')return;S.cuotasPend.splice(i,1);rCuotas()}
 
+// Reglas por defecto: SOLO se usan para sembrar S.reglas la primera vez.
+// La fuente de verdad es S.reglas, que es lo que el admin edita y se persiste.
+const REGLAS_DEFAULT=[
+  {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
+  {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
+  {t:'Equipos fijos',d:'Los equipos son Naranjo y Azul. Flexibles y galletas se asignan para balancear.'},
+  {t:'Galletas',d:'Cada jugador puede traer un invitado. La galleta paga la misma cuota que los titulares.'},
+  {t:'Reservas y bajas',d:'Las bajas deben avisarse antes del partido. El que se baja el día del partido igual paga.'},
+  {t:'Cuota del partido',d:'Se cobra al terminar. Cubre la cancha; el remanente va al fondo del asado.'},
+  {t:'Fondo del asado',d:'El excedente de cada fecha se acumula. El grupo vota cuándo y cómo se usa.'},
+  {t:'Marcador',d:'El admin registra el resultado al finalizar. Si hay duda, se vota entre los jugadores.'},
+];
 function rReglas(){
-  const reglas=[
-    {t:'Mínimo para jugar',d:'Se necesitan al menos 12 jugadores. Con menos no se juega — se reagenda o cancela.'},
-    {t:'Cupo ideal',d:'El cupo ideal es 14 jugadores (7 vs 7). Las reservas entran si alguien se baja.'},
-    {t:'Equipos fijos',d:'Los equipos son Naranjo y Azul. Flexibles y galletas se asignan para balancear.'},
-    {t:'Galletas',d:'Cada jugador puede traer un invitado. La galleta paga la misma cuota que los titulares.'},
-    {t:'Reservas y bajas',d:'Las bajas deben avisarse antes del partido. El que se baja el día del partido igual paga.'},
-    {t:'Cuota del partido',d:'Se cobra al terminar. Cubre la cancha; el remanente va al fondo del asado.'},
-    {t:'Fondo del asado',d:'El excedente de cada fecha se acumula. El grupo vota cuándo y cómo se usa.'},
-    {t:'Marcador',d:'El admin registra el resultado al finalizar. Si hay duda, se vota entre los jugadores.'},
-  ];
+  if(!S.reglas||!S.reglas.length)S.reglas=REGLAS_DEFAULT.map(r=>({t:r.t,d:r.d}));
+  const reglas=S.reglas;
   document.getElementById('page-reglas').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Reglamento</div><div class="page-title">Reglas del grupo</div></div></div>
     <div class="card">${reglas.map((r,i)=>`
@@ -2670,20 +2679,104 @@ function rAsado(){
   });
 }
 
+/* ===== CONFIG: estado de la base ===== */
+function cfgStamp(iso){
+  if(!iso)return '—';
+  var d=new Date(iso);
+  if(isNaN(d.getTime()))return '—';
+  var hh=String(d.getHours()).padStart(2,'0')+':'+String(d.getMinutes()).padStart(2,'0');
+  var h=new Date();
+  var hoy=d.getFullYear()===h.getFullYear()&&d.getMonth()===h.getMonth()&&d.getDate()===h.getDate();
+  return hoy?('hoy '+hh):(fdate(d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0'))+' '+hh);
+}
+function cfgEstadoInner(){
+  var st={loaded:false,lastWrite:null,pending:false,retry:0,status:'desconocido'};
+  if(typeof window._dbState==='function'){try{st=window._dbState()}catch(e){}}
+  var online=(typeof navigator==='undefined')||navigator.onLine!==false;
+  var malo=(!online)||(!st.loaded)||st.status==='error'||st.status==='offline';
+  var guardando=(!malo)&&(st.pending||st.status==='saving');
+  var badge=malo?'<span class="badge badge-red">Sin conexión</span>'
+    :guardando?'<span class="badge badge-yellow">Guardando…</span>'
+    :'<span class="badge badge-green">Todo guardado</span>';
+  return '<div class="row" style="margin-bottom:1rem"><div class="card-title" style="margin-bottom:0">Estado de los datos</div>'+badge+'</div>'
+   +'<div class="stat-row"><span class="stat-label">Último guardado</span><span class="stat-val">'+cfgStamp(st.lastWrite)+'</span></div>'
+   +'<div class="stat-row"><span class="stat-label">Cambios sin subir</span><span class="stat-val">'+(st.pending?'Sí':'No')+'</span></div>'
+   +'<div class="stat-row"><span class="stat-label">Reintentos</span><span class="stat-val">'+(st.retry||0)+'</span></div>'
+   +(malo?'<div class="alert-yellow" style="margin-top:1rem;margin-bottom:0">Ojo: no se está guardando en la nube. Revisa la señal y aprieta Reintentar. Si sigue rojo, bájate el respaldo antes de cerrar.</div>':'')
+   +'<div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">'
+     +'<button class="btn btn-sm" onclick="cfgRetrySync()">Reintentar ahora</button>'
+     +'<button class="btn btn-sm" onclick="__cfgSyncEstado()">Actualizar</button>'
+   +'</div>';
+}
+function __cfgSyncEstado(){var b=document.getElementById('cfg-estado');if(b)b.innerHTML=cfgEstadoInner()}
+window.__cfgSyncEstado=__cfgSyncEstado;
+function cfgRetrySync(){
+  if(typeof window._flushSaveNow==='function')window._flushSaveNow();
+  else if(typeof window._saveToFirestore==='function')window._saveToFirestore();
+  setTimeout(__cfgSyncEstado,600);
+}
+/* ===== CONFIG: respaldo ===== */
+function cfgSnapshotJSON(){
+  return JSON.stringify({
+    _app:'futbolito',_temporada:2026,_bajadoEl:new Date().toISOString(),
+    players:S.players||[],
+    matches:(S.matches||[]).filter(function(m){return m.season!==2025}),
+    nextMatch:S.nextMatch||{},cuotasPend:S.cuotasPend||[],
+    gastos:S.gastos||[],galletas:S.galletas||[],
+    reglas:S.reglas||[],metaAsado:S.metaAsado||0
+  },null,2);
+}
+function cfgExportJSON(){
+  try{
+    var d=new Date();
+    var nombre='futbolito-'+d.getFullYear()+String(d.getMonth()+1).padStart(2,'0')+String(d.getDate()).padStart(2,'0')+'.json';
+    var blob=new Blob([cfgSnapshotJSON()],{type:'application/json'});
+    var url=URL.createObjectURL(blob);
+    var a=document.createElement('a');a.href=url;a.download=nombre;
+    document.body.appendChild(a);a.click();
+    setTimeout(function(){URL.revokeObjectURL(url);a.remove()},500);
+  }catch(e){alert('No se pudo descargar el respaldo: '+e.message)}
+}
 function rConfig(){
-  const myPlayer=S.players[0];
+  const myPlayer=S.players&&S.players.length?S.players[0]:null;
   const __galletasHtml=(typeof rConfigGalletas==='function')?rConfigGalletas():'';
   if(ROLE==='admin'){
-    document.getElementById('page-config').innerHTML=__galletasHtml+`
+    const ps=(S.players||[]).slice().sort(function(a,b){
+      if(!!a.active!==!!b.active)return a.active?-1:1;
+      return (a.name||'').localeCompare(b.name||'');
+    });
+    const act=ps.filter(function(p){return p.active});
+    const nar=act.filter(function(p){return p.team==='Naranjo'}).length;
+    const azu=act.filter(function(p){return p.team==='Azul'}).length;
+    const fle=act.length-nar-azu;
+    const arq=act.filter(function(p){return p.skill==='arquero'||p.skill==='ambos'}).length;
+    const bajas=ps.length-act.length;
+    const n26=(S.matches||[]).filter(function(m){return (m.season||2026)===2026}).length;
+    const deuda=(S.cuotasPend||[]).reduce(function(s,c){return s+(+c.amount||0)},0);
+    document.getElementById('page-config').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Administración</div><div class="page-title">Configuración</div></div></div>
+
+    <div class="card" id="cfg-estado">${cfgEstadoInner()}</div>
+
     <div class="card" style="margin-bottom:12px">
-      <div class="row" style="margin-bottom:1rem">
-        <div class="card-title" style="margin-bottom:0">Jugadores</div>
+      <div class="row" style="margin-bottom:10px">
+        <div class="card-title" style="margin-bottom:0">Plantel</div>
         <button class="btn btn-sm btn-primary" onclick="openJugadorModal()">+ Agregar</button>
       </div>
-      <table><thead><tr><th>Nombre</th><th>Equipo base</th><th>Skill</th><th>Estado</th><th></th></tr></thead>
-      <tbody>${S.players.map(p=>`<tr>
-        <td><input class="input" style="padding:3px 7px;font-size:13px;font-weight:600;width:100%" value="${p.name}" onchange="setName('${p.id}',this.value)"></td>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:12px">
+        <span class="badge badge-green">${act.length} activos</span>
+        ${bajas>0?`<span class="badge badge-neutral">${bajas} de baja</span>`:''}
+        <span class="tag-orange">Naranjo ${nar}</span>
+        <span class="tag-blue">Azul ${azu}</span>
+        <span class="tag-flex">Flexible ${fle}</span>
+        <span class="badge badge-${arq>=2?'green':'yellow'}">🧤 ${arq} arqueros</span>
+      </div>
+      ${arq<2?`<div class="alert-yellow">Hay ${arq} arquero(s) activo(s). Ojo al armar la nómina del miércoles.</div>`:''}
+      ${act.length<12?`<div class="alert-yellow">Solo ${act.length} jugadores activos. El mínimo para jugar son 12.</div>`:''}
+      <div class="table-wrap">
+      <table><thead><tr><th>Nombre</th><th>Equipo base</th><th>Posición</th><th>Estado</th><th></th></tr></thead>
+      <tbody>${ps.map(p=>`<tr${p.active?'':' style="opacity:.55"'}>
+        <td><input class="input" style="padding:3px 7px;font-size:13px;font-weight:600;min-width:110px" value="${String(p.name||'').replace(/"/g,'&quot;')}" onchange="setName('${p.id}',this.value)"></td>
         <td><select class="input" style="padding:3px 7px;font-size:11px" onchange="setTeam('${p.id}',this.value)">
           <option value="Naranjo"${p.team==='Naranjo'?' selected':''}>🟠 Naranjo</option>
           <option value="Azul"${p.team==='Azul'?' selected':''}>🔵 Azul</option>
@@ -2694,14 +2787,42 @@ function rConfig(){
           <option value="ambos"${p.skill==='ambos'?' selected':''}>🧤⚽ Ambos</option>
           <option value="arquero"${p.skill==='arquero'?' selected':''}>🧤 Arquero</option>
         </select></td>
-        <td><span class="badge badge-${p.active?'green':'neutral'}">${p.active?'Activo':'Inactivo'}</span></td>
-        <td><button class="btn btn-sm" onclick="toggleP('${p.id}')">${p.active?'Dar de baja':'Reactivar'}</button></td>
+        <td><span class="badge badge-${p.active?'green':'neutral'}">${p.active?'Activo':'De baja'}</span></td>
+        <td style="text-align:right;white-space:nowrap"><button class="btn btn-sm" onclick="toggleP('${p.id}')">${p.active?'Dar de baja':'Reactivar'}</button></td>
       </tr>`).join('')}</tbody></table>
+      </div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);margin-top:10px;line-height:1.6">Los que están de baja no aparecen al armar la nómina. No se borra nada: el historial y las cuotas quedan igual.</div>
     </div>
+
+    ${__galletasHtml}
+
     <div class="card">
       <div class="card-title">Parámetros</div>
-      <div><div class="form-label">Meta asado ($)</div><input class="input" type="number" value="${S.metaAsado||200000}" onchange="S.metaAsado=parseInt(this.value)||200000;_saveToFirestore();rConfig();rAsado();"></div>
+      <div class="form-group"><div class="form-label">Meta del fondo de asado ($)</div><input class="input" type="number" min="10000" step="10000" value="${S.metaAsado||200000}" onchange="cfgSetMeta(this.value)"></div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);line-height:1.6">Es la barra que se ve en la vista Asado.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Respaldo</div>
+      <div class="stat-row"><span class="stat-label">Jugadores</span><span class="stat-val">${(S.players||[]).length}</span></div>
+      <div class="stat-row"><span class="stat-label">Partidos 2026</span><span class="stat-val">${n26}</span></div>
+      <div class="stat-row"><span class="stat-label">Cuotas pendientes</span><span class="stat-val">${(S.cuotasPend||[]).length} · ${clp(deuda)}</span></div>
+      <div class="stat-row"><span class="stat-label">Gastos del asado</span><span class="stat-val">${(S.gastos||[]).length}</span></div>
+      <div style="display:flex;gap:8px;margin-top:1rem;flex-wrap:wrap">
+        <button class="btn btn-sm btn-primary" onclick="cfgExportJSON()">Descargar respaldo</button>
+      </div>
+      <div style="font-size:var(--t-body-sm);color:var(--text3);margin-top:10px;line-height:1.6">Los partidos de 2025 no van en el archivo: ésos viven fijos dentro de la app.</div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Acceso admin</div>
+      <div class="stat-row"><span class="stat-label">Sesión</span><span class="stat-val"><span class="badge badge-green">Admin</span></span></div>
+      <div style="display:flex;gap:8px;margin-top:1rem"><button class="btn btn-sm" onclick="adminLogout()">Salir de admin</button></div>
     </div>`;
+  } else if(!myPlayer){
+    document.getElementById('page-config').innerHTML=`
+    <div class="page-header"><div><div class="page-eyebrow">Configuración</div><div class="page-title">Sin datos</div></div></div>
+    <div class="card"><div class="empty">Todavía no hay jugadores cargados.</div></div>`;
   } else {
     const sk=myPlayer.skill||'jugador';
     const teamColor=myPlayer.team==='Naranjo'?'var(--orange-soft)':myPlayer.team==='Azul'?'var(--blue-soft)':'#f6f8fb';
@@ -2726,9 +2847,34 @@ function rConfig(){
     </div>`;
   }
 }
-function toggleP(id){S.players=S.players.map(p=>p.id===id?{...p,active:!p.active}:p);rConfig()}
+function cfgSetMeta(v){
+  var n=parseInt(v,10);
+  if(isNaN(n)||n<10000){alert('La meta tiene que ser de al menos $10.000.');rConfig();return}
+  S.metaAsado=n;
+  if(window._saveToFirestore)window._saveToFirestore();
+  rConfig();if(typeof rAsado==='function')rAsado();
+}
+function toggleP(id){
+  var p=(S.players||[]).find(function(x){return x.id===id});
+  if(!p)return;
+  if(p.active){
+    var enNomina=((S.nextMatch&&S.nextMatch.roster)||[]).some(function(r){return r.pid===id});
+    var pend=(S.cuotasPend||[]).filter(function(c){return c.pid===id}).length;
+    var msg='¿Dar de baja a '+p.name+'?\n\nDeja de aparecer al armar la nómina. No se borra nada del historial.';
+    if(enNomina)msg+='\n\nOJO: está en la nómina del próximo partido. Sácalo a mano si no juega.';
+    if(pend)msg+='\n\nOJO: tiene '+pend+' cuota(s) pendiente(s). La deuda no se borra.';
+    if(!confirm(msg))return;
+  }
+  S.players=S.players.map(p=>p.id===id?{...p,active:!p.active}:p);rConfig()
+}
 function setSkill(id,sk){S.players=S.players.map(p=>p.id===id?{...p,skill:sk}:p);rConfig()}
-function setName(id,name){S.players=S.players.map(p=>p.id===id?{...p,name}:p)}
+function setName(id,name){
+  var n=String(name||'').trim();
+  if(!n){alert('El nombre no puede quedar vacío.');rConfig();return}
+  var dup=(S.players||[]).some(function(p){return p.id!==id&&(p.name||'').toLowerCase()===n.toLowerCase()});
+  if(dup){alert('Ya hay otro jugador que se llama "'+n+'".');rConfig();return}
+  S.players=S.players.map(p=>p.id===id?{...p,name:n}:p)
+}
 function setTeam(id,team){S.players=S.players.map(p=>p.id===id?{...p,team}:p);rConfig()}
 
 function openModal(id=null,season=2026){
@@ -2793,42 +2939,10 @@ function saveJugador(){
 }
 
 
-// USUARIOS — email:contraseña:nombre:rol
-const USERS={
-  'elias@futbolito.cl':  {pass:'elias2026',  name:'Elías',   role:'admin'},
-  'juan@futbolito.cl':   {pass:'juan2026',   name:'Juan',    role:'user'},
-  'nico@futbolito.cl':   {pass:'nico2026',   name:'Nico',    role:'user'},
-  'pablo@futbolito.cl':  {pass:'pablo2026',  name:'Pablo',   role:'user'},
-  'cristian@futbolito.cl':{pass:'cristian2026',name:'Cristian',role:'user'},
-  'seba@futbolito.cl':   {pass:'seba2026',   name:'Seba',    role:'user'},
-  'tomas@futbolito.cl':  {pass:'tomas2026',  name:'Tomás',   role:'user'},
-  'rodrigo@futbolito.cl':{pass:'rodrigo2026',name:'Rodrigo', role:'user'},
-  'admin':               {pass:atob('Y2hhbXAyNg=='), name:'Admin',   role:'admin'},
-};
-function doLogin(){
-  const email=document.getElementById('login-email').value.trim().toLowerCase();
-  const pass=document.getElementById('login-pass').value;
-  const err=document.getElementById('login-error');
-  const user=USERS[email];
-  if(!user||user.pass!==pass){err.style.display='block';return;}
-  err.style.display='none';
-  window._currentUser={email,name:user.name,role:user.role};
-  ROLE=user.role==='admin'?'admin':'user';
-  const n=document.getElementById('user-name');
-  if(n)n.textContent=user.name;
-  document.getElementById('login-screen').style.display='none';
-  document.getElementById('app').style.display='block';
-  window._loadData();
-}
-function doLogout(){
-  window._currentUser=null;
-  document.getElementById('login-screen').style.display='flex';
-  document.getElementById('app').style.display='none';
-  document.getElementById('login-email').value='';
-  document.getElementById('login-pass').value='';
-}
-
-/* Firebase init after auth */
+// Nota: acá vivía un bloque USERS con 9 contraseñas en texto plano, más doLogin()
+// y doLogout(). Era código muerto: no existe #login-screen en el HTML y nadie los
+// llamaba, así que esas claves no servían para entrar — solo quedaban legibles en
+// "ver código fuente" de un repo público. El único acceso real es ADMIN_PASS.
 
 // Admin login
 var ADMIN_PASS=atob('YWRtaW4xMjM0');
@@ -2912,7 +3026,7 @@ function setLoadRosterTeam(pid,team){
   renderLoadRosterBody();
 }
 function renderLoadRosterBody(){
-  const players=(S.players||[]).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
+  const players=(S.players||[]).filter(p=>p.active!==false).slice().sort((a,b)=>(a.name||'').localeCompare(b.name||''));
   const counts={Naranjo:0,Azul:0,Flexible:0,Galleta:0};
   Object.values(__loadRosterAssigns).forEach(t=>{if(counts[t]!=null)counts[t]++;});
   const total=counts.Naranjo+counts.Azul+counts.Flexible+counts.Galleta;
