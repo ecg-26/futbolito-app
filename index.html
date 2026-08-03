@@ -779,6 +779,10 @@ let S={
 };
 
 const clp=n=>new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maximumFractionDigits:0}).format(n||0);
+// Escapa texto libre (nombres, glosas, motivos, reglas) antes de insertarlo en HTML.
+// Necesario porque esos campos los escribe cualquier jugador y se ven vía Firestore
+// en la pantalla de todos: sin esto, un nombre con <script> se ejecuta para todo el grupo.
+const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const fdate=d=>{if(!d)return'–';const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'–';return new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);};
 const fdateYear=d=>{if(!d)return'';const dt=new Date(d+'T12:00:00');const base=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);return base+'-'+String(dt.getFullYear()).slice(2);}
 const dateBadgeHTML=(d)=>{const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'<div></div>';const dow=new Intl.DateTimeFormat('es-CL',{weekday:'short'}).format(dt).replace('.','').toUpperCase();const day=dt.getDate();const month=new Intl.DateTimeFormat('es-CL',{month:'short'}).format(dt).replace('.','').toUpperCase();return '<div style="display:inline-flex;flex-direction:column;align-items:center;background:#fff;border:2px solid var(--orange);border-radius:14px;padding:6px 14px;min-width:74px;box-shadow:0 4px 12px rgba(234,108,10,0.15);line-height:1"><div style="font-size:10px;font-weight:700;color:var(--orange);letter-spacing:0.08em">'+dow+'</div><div style="font-size:30px;font-weight:800;color:var(--brand);margin:3px 0;letter-spacing:-0.04em">'+day+'</div><div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.05em">'+month+'</div></div>';};
@@ -1053,7 +1057,7 @@ function openCronicaModal(matchId){
       +'<div style="text-align:center">'
       +'<div style="font-size:14px;font-weight:800;color:#1a202c;margin-bottom:6px;line-height:1.3">'+cr.titulo+'</div>'
       +'<p style="font-size:12px;color:#6b7a99;line-height:1.65;margin-bottom:12px">'+cr.cuerpo+'</p>'
-      +(m.cancelMotivo?'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:11px;color:#b91c1c;font-style:italic">"'+m.cancelMotivo+'"</div>':'')
+      +(m.cancelMotivo?'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:8px 12px;font-size:11px;color:#b91c1c;font-style:italic">"'+esc(m.cancelMotivo)+'"</div>':'')
       +'</div></div>';
     document.getElementById('modal-cronica-content').innerHTML=contenido;
     document.getElementById('modal-cronica').classList.add('open');
@@ -1106,7 +1110,7 @@ function openCronicaModal(matchId){
     const flex=r.filter(p=>!p.matchTeam||p.matchTeam==='Pendiente'||p.matchTeam==='Flexible'||p.matchTeam==='Galleta');
     const renderTeam=(arr,color,bg,border,name)=>arr.length>0?
       '<div style="background:'+bg+';border:1px solid '+border+';border-radius:8px;padding:10px"><div style="font-size:10px;font-weight:700;color:'+color+';letter-spacing:0.08em;text-transform:uppercase;margin-bottom:6px">'+name+' · '+arr.length+'</div>'+
-      arr.map(p=>'<div style="font-size:11px;color:'+color+';margin:2px 0">'+p.name+(p.skill==='arquero'?' 🧤':'')+(p.galleta?' 🍪':'')+'</div>').join('')+
+      arr.map(p=>'<div style="font-size:11px;color:'+color+';margin:2px 0">'+esc(p.name)+(p.skill==='arquero'?' 🧤':'')+(p.galleta?' 🍪':'')+'</div>').join('')+
       '</div>':'';
     const plantelHTML='<div style="border-top:1px solid #e2e8f0;padding:14px 1.125rem"><div style="font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:#6b7a99;margin-bottom:8px">Plantel del partido</div><div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">'+
       renderTeam(nrj,'#ea6c0a','#fff3ed','#fcd9b8','Naranjo')+
@@ -1404,7 +1408,7 @@ function rDash(){
             +'<div style="border-top:0.5px solid #f1f4f8;padding-top:10px;text-align:center">'
             +'<div style="font-size:13px;font-weight:800;color:#1a202c;margin-bottom:4px;line-height:1.3">'+cr.titulo+'</div>'
             +'<p style="font-size:12px;color:#6b7a99;line-height:1.6;margin-bottom:8px">'+cr.cuerpo+'</p>'
-            +(m.cancelMotivo?'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 10px;font-size:11px;color:#b91c1c;font-style:italic">&ldquo;'+m.cancelMotivo+'&rdquo;</div>':'')
+            +(m.cancelMotivo?'<div style="background:#fef2f2;border:1px solid #fecaca;border-radius:8px;padding:6px 10px;font-size:11px;color:#b91c1c;font-style:italic">&ldquo;'+esc(m.cancelMotivo)+'&rdquo;</div>':'')
             +'</div></div></div>';
         }
         const prevSlice=allDash.slice(0,allDash.indexOf(m)+1);
@@ -1699,11 +1703,11 @@ function rProximo(){
               const skEdit=canEditSk
                 ?' <button onclick="openSkillPicker(&apos;'+p.pid+'&apos;)" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0;margin-left:1px;line-height:1;vertical-align:middle">'+skEmoji2.trim()+'</button>'
                 :'';
-              return '<td style="font-weight:600">'+p.name+(canEditSk?'':skEmoji2)+skEdit+'</td>';
+              return '<td style="font-weight:600">'+esc(p.name)+(canEditSk?'':skEmoji2)+skEdit+'</td>';
             })()
             +(()=>{
               const colorTag=p.team==='Naranjo'?'<span class="tag-orange">Naranjo</span>':p.team==='Azul'?'<span class="tag-blue">Azul</span>':p.galleta?'<span style="background:#f5f0eb;color:#6b5744;border:1px solid #a8896f;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:600">🍪 Galleta</span>':'<span style="background:#f6f8fb;color:#6b7a99;border:1px solid #e2e8f0;border-radius:20px;padding:2px 9px;font-size:10px;font-weight:600">Flexible</span>';
-              const invTag=p.galleta&&p.invBy?'<span style="background:#fdf2f8;color:#db2777;border:1px solid #fbcfe8;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:600">inv. '+p.invBy+'</span>':'';
+              const invTag=p.galleta&&p.invBy?'<span style="background:#fdf2f8;color:#db2777;border:1px solid #fbcfe8;border-radius:20px;padding:2px 7px;font-size:10px;font-weight:600">inv. '+esc(p.invBy)+'</span>':'';
               return '<td><div style="display:flex;flex-wrap:wrap;gap:3px;align-items:center">'+colorTag+invTag+'</div></td>';
             })()
 
@@ -1763,7 +1767,7 @@ function rProximo(){
         +activos.map(p=>{
           const mt=p.matchTeam||'Pendiente';
           return '<div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border)">'
-            +(()=>{ const sk=getSkill(p); return '<span style="font-size:13px;font-weight:600;color:var(--text);flex:1">'+p.name+skillEmoji(sk)+(p.galleta?' <span style="font-size:10px;color:var(--text3)">(🍪 '+p.invBy+')</span>':'')+'</span>'; })()
+            +(()=>{ const sk=getSkill(p); return '<span style="font-size:13px;font-weight:600;color:var(--text);flex:1">'+esc(p.name)+skillEmoji(sk)+(p.galleta?' <span style="font-size:10px;color:var(--text3)">(🍪 '+esc(p.invBy)+')</span>':'')+'</span>'; })()
             +(ROLE==='admin'?'<select onchange="setMatchTeam(&apos;'+p.pid+'&apos;,this.value)" style="padding:3px 6px;border-radius:20px;border:1.5px solid '+(mt==='Naranjo'?'var(--orange-border)':mt==='Azul'?'var(--blue-border)':'var(--border2)')+';background:'+(mt==='Naranjo'?'var(--orange-soft)':mt==='Azul'?'var(--blue-soft)':'#fff')+';color:'+(mt==='Naranjo'?'var(--orange)':mt==='Azul'?'var(--blue)':'var(--text2)')+';font-size:12px;font-weight:600;cursor:pointer">'
             +'<option'+(mt==='Naranjo'?' selected':'')+'>Naranjo</option>'
             +'<option'+(mt==='Azul'?' selected':'')+'>Azul</option>'
@@ -1811,7 +1815,7 @@ function rProximo(){
               +'<span style="width:7px;height:7px;border-radius:50%;background:'+e.stDot+';flex-shrink:0"></span>'
               +'<span style="font-size:13px;flex:1;min-width:0">'
               +'<strong style="color:var(--text)">'+e.p.name+'</strong>'
-              +' <span style="color:var(--text2)">'+e.msg+(e.p.galleta?' · galleta de '+e.p.invBy:'')+'</span>'
+              +' <span style="color:var(--text2)">'+e.msg+(e.p.galleta?' · galleta de '+esc(e.p.invBy):'')+'</span>'
               +'</span>'
               +'<span style="font-size:11px;font-weight:600;color:'+e.stColor+';flex-shrink:0">'+e.stLabel+'</span>'
               +'</div>';
@@ -1828,7 +1832,7 @@ function openCancelarModal(){
 function closeCancelarModal(){
   document.getElementById('modal-cancelar').classList.remove('open');
 }
-function confirmarCancelacion(){
+function confirmarCancelacion(){if(ROLE!=='admin')return;
   const motivo=document.getElementById('cancelar-motivo').value.trim()||'Sin motivo';
   const nm=S.nextMatch;
   // Guardar partido cancelado en historial
@@ -1885,7 +1889,7 @@ function updateFCalcManual(){
   document.getElementById('f-asado').value=Math.max(0,asado);
   document.getElementById('f-calc-note').textContent=p+' jug. × '+clp(fee)+' = '+clp(fee*p)+' recaudado · '+clp(Math.max(0,asado))+' al asado';
 }
-function saveFinalizar(){
+function saveFinalizar(){if(ROLE!=='admin')return;
   const orange=parseInt(document.getElementById('f-orange').value)||0;
   const blue=parseInt(document.getElementById('f-blue').value)||0;
   const players=parseInt(document.getElementById('f-players').value)||14;
@@ -1935,7 +1939,7 @@ function openSkillPicker(pid){if(ROLE!=='admin')return;
   d.id='skill-picker-overlay';
   d.style.cssText='position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:999;display:flex;align-items:center;justify-content:center';
   d.innerHTML='<div style="background:#fff;border-radius:16px;padding:1.25rem;width:280px;box-shadow:0 20px 40px rgba(0,0,0,0.15)">'
-    +'<div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#1a202c">Skill de '+target.name+'</div>'
+    +'<div style="font-size:14px;font-weight:700;margin-bottom:12px;color:#1a202c">Skill de '+esc(target.name)+'</div>'
     +'<div style="display:flex;flex-direction:column;gap:8px">'
     +'<button onclick="pickSkill(&apos;'+pid+'&apos;,&apos;jugador&apos;)" style="padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid '+(sk==='jugador'?'#6b7a99':'#e2e8f0')+';background:'+(sk==='jugador'?'#f1f4f8':'#fff')+';color:#1a202c;text-align:left;font-family:inherit">⚽ Jugador</button>'
     +'<button onclick="pickSkill(&apos;'+pid+'&apos;,&apos;ambos&apos;)" style="padding:10px 14px;border-radius:10px;font-size:13px;font-weight:600;cursor:pointer;border:1.5px solid '+(sk==='ambos'?'#bbf7d0':'#e2e8f0')+';background:'+(sk==='ambos'?'#f0fdf4':'#fff')+';color:#1a202c;text-align:left;font-family:inherit">🧤⚽ Arquero o jugador</button>'
@@ -1950,7 +1954,7 @@ function pickSkill(pid,sk){
   if(ov)ov.remove();
   setGalletaSkill(pid,sk);
 }
-function editCuotaJugador(pid){
+function editCuotaJugador(pid){if(ROLE!=='admin')return;
   const p=S.nextMatch.roster.find(x=>x.pid===pid);
   if(!p)return;
   const current=p.fee||S.nextMatch.fee||4000;
@@ -1995,14 +1999,14 @@ function openAddJugadorNomina(){
       const teamBorder=p.team==='Naranjo'?'#fcd9b8':p.team==='Azul'?'#bfdbfe':'#e2e8f0';
       return '<label style="display:flex;align-items:center;gap:10px;padding:10px 12px;border-radius:10px;border:1.5px solid var(--border);cursor:pointer;transition:all 0.15s">'
         +'<input type="checkbox" value="'+p.id+'" style="width:16px;height:16px;cursor:pointer;accent-color:var(--orange)">'
-        +'<span style="flex:1;font-size:13px;font-weight:600;color:var(--text)">'+p.name+skLabel+'</span>'
+        +'<span style="flex:1;font-size:13px;font-weight:600;color:var(--text)">'+esc(p.name)+skLabel+'</span>'
         +'<span style="background:'+teamColor+';border:1px solid '+teamBorder+';border-radius:20px;padding:2px 8px;font-size:11px;font-weight:600;color:'+(p.team==='Naranjo'?'var(--orange)':p.team==='Azul'?'var(--blue)':'var(--text2)')+'">'+p.team+'</span>'
         +'</label>';
     }).join('');
   }
   document.getElementById('modal-add-jugador-nomina').classList.add('open');
 }
-function editAsadoPartido(id, season){
+function editAsadoPartido(id, season){if(ROLE!=='admin')return;
   const m=S.matches.find(x=>x.id===id&&(x.season||2026)===(season||2026));
   if(!m)return;
   const nuevo=prompt('Aporte al asado para '+fdate(m.date)+' ($):',m.asado);
@@ -2018,7 +2022,7 @@ function editRegla(i){
   document.getElementById('er-desc').value=S.reglas[i].d;
   document.getElementById('modal-edit-regla').classList.add('open');
 }
-function saveEditRegla(){
+function saveEditRegla(){if(ROLE!=='admin')return;
   if(_editReglaIdx<0)return;
   S.reglas[_editReglaIdx].t=document.getElementById('er-title').value.trim();
   S.reglas[_editReglaIdx].d=document.getElementById('er-desc').value.trim();
@@ -2027,12 +2031,12 @@ function saveEditRegla(){
 }
 function openAddMoroso(){
   const sel=document.getElementById('am-player');
-  sel.innerHTML=S.players.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+p.name+'</option>').join('');
+  sel.innerHTML=S.players.filter(p=>p.active).map(p=>'<option value="'+p.id+'">'+esc(p.name)+'</option>').join('');
   document.getElementById('am-fecha').value='';
   document.getElementById('am-amount').value=4000;
   document.getElementById('modal-add-moroso').classList.add('open');
 }
-function saveAddMoroso(){
+function saveAddMoroso(){if(ROLE!=='admin')return;
   const pid=document.getElementById('am-player').value;
   const fecha=document.getElementById('am-fecha').value.trim()||'Manual';
   const amount=parseInt(document.getElementById('am-amount').value)||4000;
@@ -2048,7 +2052,7 @@ function openEditPartidoModal(){
   document.getElementById('ep-court').value=S.nextMatch.court||49000;
   document.getElementById('modal-edit-partido').classList.add('open');
 }
-function saveEditPartido(){
+function saveEditPartido(){if(ROLE!=='admin')return;
   const d=document.getElementById('ep-date').value;
   const fee=parseInt(document.getElementById('ep-fee').value)||4000;
   const court=parseInt(document.getElementById('ep-court').value)||49000;
@@ -2060,7 +2064,7 @@ function saveEditPartido(){
   rProximo();
   rDash();
 }
-function crearPartido(){
+function crearPartido(){if(ROLE!=='admin')return;
   const d=document.getElementById('new-partido-date');
   const fee=parseInt(document.getElementById('new-partido-fee')?.value)||4000;
   const court=parseInt(document.getElementById('new-partido-court')?.value)||49000;
@@ -2074,7 +2078,7 @@ function limpiarNomina(){
   rProximo();
 }
 function closeAddJugadorNomina(){document.getElementById('modal-add-jugador-nomina').classList.remove('open');}
-function saveAddJugadorNomina(){
+function saveAddJugadorNomina(){if(ROLE!=='admin')return;
   const checks=document.querySelectorAll('#nomina-jugadores-list input[type=checkbox]:checked');
   checks.forEach(cb=>{
     const p=S.players.find(x=>x.id===cb.value);
@@ -2110,7 +2114,7 @@ function addGalleta(){
   if(ra){
     const gs=(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
     if(gs.length){
-      ra.innerHTML='<div style="font-size:11px;color:#92400e;margin-bottom:4px;font-weight:600">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+gs.map(function(g){return '<button class="btn btn-sm" onclick="prefillGalletaFromDB(\''+g.id+'\')" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+g.name+'</button>';}).join('')+'</div>';
+      ra.innerHTML='<div style="font-size:11px;color:#92400e;margin-bottom:4px;font-weight:600">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px">'+gs.map(function(g){return '<button class="btn btn-sm" onclick="prefillGalletaFromDB(\''+g.id+'\')" style="background:#fffbeb;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+esc(g.name)+'</button>';}).join('')+'</div>';
     } else { ra.innerHTML=''; }
   }
   // Poblar select con jugadores en nómina (no galletas)
@@ -2118,7 +2122,7 @@ function addGalleta(){
   // Mostrar todos los jugadores activos del sistema (no solo los de la nómina)
   const todosActivos=S.players.filter(function(p){return p.active;});
   ownerSel.innerHTML=todosActivos.map(function(p){
-    return '<option value="'+p.id+'">'+p.name+'</option>';
+    return '<option value="'+p.id+'">'+esc(p.name)+'</option>';
   }).join('');
   const grp=document.getElementById('g-owner-group');
   if(grp) grp.style.display=todosActivos.length>0?'block':'none';
@@ -2144,7 +2148,7 @@ function selectGStatus(st){
     b.style.color=active?(s==='Confirmado'?'#16a34a':'#b45309'):'#6b7a99';
   });
 }
-function saveGalleta(){
+function saveGalleta(){if(ROLE!=='admin')return;
   const name=document.getElementById('g-name').value.trim();
   if(!name)return;
   const myName=S.nextMatch.roster[0]?.name||'Admin';
@@ -2271,7 +2275,7 @@ function rPartidos(){
       <tbody>${[...getSeasonMatches(SEASON)].reverse().map(m=>m.cancelled?`<tr style="cursor:pointer;background:#f1f4f8;color:#8896b3" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="white-space:nowrap;font-style:italic">${fdate(m.date)}</td>
         <td style="text-align:center;font-style:italic;color:#94a3b8">— sin juego —</td>
-        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m.cancelMotivo+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
+        <td style="text-align:center"><span class="badge" style="background:#e2e8f0;color:#475569;border:1px solid #cbd5e1">⊘ Cancelado</span>${m.cancelMotivo?'<div style="font-size:10px;color:#64748b;font-style:italic;margin-top:3px;max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+esc(m.cancelMotivo)+'</div>':''}</td>${ROLE==='admin'?'<td><button class="btn btn-sm" onclick="editMatch('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="margin-right:4px">Editar</button><button class="btn btn-sm" onclick="openLoadRosterModal('+m.id+','+(m.season||2026)+');event.stopPropagation()" style="background:#16a34a;color:#fff;border-color:#15803d" title="Cargar nómina">Nómina</button></td>':'<td></td>'}
       </tr>`:`<tr style="cursor:pointer" data-date="${m.date}" onclick="openCronicaModal(this.dataset.date)">
         <td style="color:var(--text2);white-space:nowrap">${fdate(m.date)}</td>
         <td style="text-align:center"><span style="color:var(--orange);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.orange}</span><span style="color:var(--text3);margin:0 5px">–</span><span style="color:var(--blue);font-weight:800;font-size:var(--t-num-sm);letter-spacing:-0.02em">${m.blue}</span></td>
@@ -2370,14 +2374,14 @@ function rCuotas(){
           const fee=S.nextMatch.fee||4000;
           const me0=S.nextMatch.roster[0];
           return activos.map(p=>{
-            const galletaTag=p.galleta?'<span style="background:#f5f0eb;color:#6b5744;border:1px solid #a8896f;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:3px">🍪 de '+p.invBy+'</span>':'';
+            const galletaTag=p.galleta?'<span style="background:#f5f0eb;color:#6b5744;border:1px solid #a8896f;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:3px">🍪 de '+esc(p.invBy)+'</span>':'';
             const paid=p.paid||false;
             const canPay=ROLE==='admin';
             const payBtn=canPay
               ?'<button onclick="togglePaid(&apos;'+p.pid+'&apos;)" style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid '+(paid?'#bbf7d0':'#e2e8f0')+';background:'+(paid?'#f0fdf4':'#fff')+';color:'+(paid?'#16a34a':'#8896b3')+';font-family:inherit">'+(paid?'✓ Pagado':'Pagado')+'</button>'
               :(paid?'<span style="color:#16a34a;font-size:11px;font-weight:600">✓</span>':'<span style="color:#c4cdd9;font-size:11px">—</span>');
             return '<tr>'
-              +'<td style="font-weight:600">'+p.name+galletaTag+'</td>'
+              +'<td style="font-weight:600">'+esc(p.name)+galletaTag+'</td>'
               +'<td style="text-align:center;white-space:nowrap">'+(ROLE==='admin'?'<button onclick="editCuotaJugador(&apos;'+p.pid+'&apos;)" style="background:none;border:none;cursor:pointer;color:#6b7a99;font-size:13px;font-weight:500;padding:2px 4px;border-radius:4px;font-family:inherit" title="Editar monto">'+clp(p.fee||fee)+' ✏️</button>':'<span style="color:#6b7a99">'+clp(p.fee||fee)+'</span>')+'</td>'
               +'<td style="text-align:center">'+payBtn+'</td>'
               +'</tr>';
@@ -2393,7 +2397,7 @@ function rCuotas(){
       ${S.cuotasPend.length===0?`<div class="empty">Todo al día 🎉</div>`:`
       <table><thead><tr><th>Jugador</th><th>Fecha</th><th>Monto</th><th></th></tr></thead>
       <tbody>${S.cuotasPend.map((c,i)=>`<tr>
-        <td style="font-weight:600">${c.name}</td><td style="color:var(--text2);white-space:nowrap">${c.fecha}</td>
+        <td style="font-weight:600">${esc(c.name)}</td><td style="color:var(--text2);white-space:nowrap">${esc(c.fecha)}</td>
         <td style="color:var(--orange);font-weight:700;white-space:nowrap">${clp(c.amount)}</td>
         <td>${ROLE==='admin'?adminPayBtn(i):''}</td>
       </tr>`).join('')}</tbody></table>`}
@@ -2496,7 +2500,7 @@ function renderGastosBlock(){
     '</div>'+
     (gs.length===0?'<div style="color:var(--text3);font-size:13px;text-align:center;padding:1rem">Sin gastos registrados</div>':
       '<div class="table-wrap"><table><thead><tr><th>Fecha</th><th>Concepto</th>'+(ROLE==='admin'?'<th></th>':'')+'</tr></thead><tbody>'+
-      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2);vertical-align:top;padding-top:10px">'+fdate(g.fecha)+'</td><td><div>'+g.glosa+'</div><div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:2px">-'+clp(g.monto)+'</div></td>'+(ROLE==='admin'?'<td style="width:64px;text-align:right;white-space:nowrap"><button onclick="editGasto('+i+')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-right:4px">✏️</button><button onclick="removeGasto('+i+')" title="Eliminar" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
+      gs.map((g,i)=>'<tr><td style="white-space:nowrap;color:var(--text2);vertical-align:top;padding-top:10px">'+fdate(g.fecha)+'</td><td><div>'+esc(g.glosa)+'</div><div style="color:#dc2626;font-size:11px;font-weight:700;margin-top:2px">-'+clp(g.monto)+'</div></td>'+(ROLE==='admin'?'<td style="width:64px;text-align:right;white-space:nowrap"><button onclick="editGasto('+i+')" title="Editar" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;margin-right:4px">✏️</button><button onclick="removeGasto('+i+')" title="Eliminar" style="background:none;border:none;cursor:pointer;color:#dc2626;font-size:14px;font-weight:700">✕</button></td>':'')+'</tr>').join('')+
       '<tr style="border-top:2px solid var(--border);background:var(--bg3)"><td colspan="1" style="font-weight:700;color:var(--text);white-space:nowrap">Total</td><td style="text-align:right;color:#dc2626;font-weight:800;font-size:14px">-'+clp(total)+'</td>'+(ROLE==='admin'?'<td></td>':'')+'</tr>'+
       '</tbody></table></div>')+
     '</div>';
@@ -2568,7 +2572,7 @@ function rReglas(){
     <div class="card">${reglas.map((r,i)=>`
       <div class="rule-item">
         <div class="rule-num">${String(i+1).padStart(2,'0')}</div>
-        <div style="flex:1"><div class="rule-title">${r.t}</div><div class="rule-desc">${r.d}</div></div>
+        <div style="flex:1"><div class="rule-title">${esc(r.t)}</div><div class="rule-desc">${esc(r.d)}</div></div>
         ${ROLE==='admin'?'<button onclick="editRegla('+i+')" style="background:none;border:none;cursor:pointer;color:var(--text3);font-size:13px;flex-shrink:0">✏️</button>':''}
       </div>`).join('')}
     </div>`;
@@ -2634,7 +2638,7 @@ function rAsado(){
             return '<tr style="background:#fef2f2">'
               +'<td style="color:#dc2626;white-space:nowrap;font-style:italic">'+fdate(item.date)+'</td>'
               +'<td style="text-align:center;color:#dc2626;font-size:18px" title="Gasto">💸</td>'
-              +'<td style="text-align:center;color:#dc2626;font-weight:600">'+item.g.glosa+'<div style="font-size:11px;opacity:0.8;margin-top:2px">(-'+clp(-item.monto)+')</div></td>'
+              +'<td style="text-align:center;color:#dc2626;font-weight:600">'+esc(item.g.glosa)+'<div style="font-size:11px;opacity:0.8;margin-top:2px">(-'+clp(-item.monto)+')</div></td>'
               +'<td style="text-align:center;font-weight:700;color:var(--text);white-space:nowrap">'+clp(item.acc)+'</td>'
               +'</tr>';
           }
@@ -2874,7 +2878,7 @@ function rConfig(){
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border)">
         <div style="width:52px;height:52px;border-radius:50%;background:${teamColor};border:2px solid ${teamBorder};display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">${teamIcon}</div>
         <div>
-          <div style="font-size:18px;font-weight:800;color:var(--text)">${myPlayer.name}</div>
+          <div style="font-size:18px;font-weight:800;color:var(--text)">${esc(myPlayer.name)}</div>
           <div style="font-size:12px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px">${teamTag(myPlayer.team)}<span class="badge badge-${myPlayer.active?'green':'neutral'}">${myPlayer.active?'Activo':'Inactivo'}</span></div>
         </div>
       </div>
@@ -2894,7 +2898,7 @@ function cfgSetMeta(v){
   if(window._saveToFirestore)window._saveToFirestore();
   rConfig();if(typeof rAsado==='function')rAsado();
 }
-function toggleP(id){
+function toggleP(id){if(ROLE!=='admin')return;
   var p=(S.players||[]).find(function(x){return x.id===id});
   if(!p)return;
   if(p.active){
@@ -2909,13 +2913,14 @@ function toggleP(id){
 }
 function setSkill(id,sk){S.players=S.players.map(p=>p.id===id?{...p,skill:sk}:p);rConfig()}
 function setName(id,name){
+  if(ROLE!=='admin'){rConfig();return}
   var n=String(name||'').trim();
   if(!n){alert('El nombre no puede quedar vacío.');rConfig();return}
   var dup=(S.players||[]).some(function(p){return p.id!==id&&(p.name||'').toLowerCase()===n.toLowerCase()});
   if(dup){alert('Ya hay otro jugador que se llama "'+n+'".');rConfig();return}
   S.players=S.players.map(p=>p.id===id?{...p,name:n}:p)
 }
-function setTeam(id,team){S.players=S.players.map(p=>p.id===id?{...p,team}:p);rConfig()}
+function setTeam(id,team){if(ROLE!=='admin')return;S.players=S.players.map(p=>p.id===id?{...p,team}:p);rConfig()}
 
 function openModal(id=null,season=2026){
   // 2025 es histórico: vive hardcodeado en MATCHES_2025 y nunca se persiste.
@@ -2942,7 +2947,7 @@ function updateCalc(){
     +(asado<0?('faltan '+clp(-asado)+' para cubrir la cancha'):(clp(asado)+' va al asado'));
 }
 function closeModal(){document.getElementById('modal-partido').classList.remove('open')}
-function saveMatch(){
+function saveMatch(){if(ROLE!=='admin')return;
   const date=document.getElementById('m-date').value;
   const players=parseInt(document.getElementById('m-players').value)||14;
   const orange=parseInt(document.getElementById('m-orange').value)||0;
@@ -2972,7 +2977,7 @@ function openJugadorModal(){
   document.getElementById('modal-jugador').classList.add('open');
 }
 function closeJugadorModal(){document.getElementById('modal-jugador').classList.remove('open')}
-function saveJugador(){
+function saveJugador(){if(ROLE!=='admin')return;
   const name=document.getElementById('j-name').value.trim();
   const team=document.getElementById('j-team').value;
   if(!name)return;
@@ -3091,7 +3096,7 @@ function renderLoadRosterBody(){
     const fromCuotas=(function(){const mm=S.matches.find(x=>x.id===__loadRosterMatchId&&(x.season||2026)===__loadRosterSeason);if(!mm)return false;return (S.cuotasPend||[]).some(c=>c.pid===p.id&&c.fecha===fdate(mm.date));})();
     const opts=teams.map(t=>'<option value="'+t+'" '+(t===cur?'selected':'')+'>'+(t||'— no participó —')+'</option>').join('');
     html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 8px;border-radius:8px;'+(fromCuotas?'background:#fffbeb':'background:transparent')+'">'
-     +'<div style="flex:1;font-size:13px;color:'+(cur?teamColor(cur):'#6b7a99')+'">'+p.name+'</div>'
+     +'<div style="flex:1;font-size:13px;color:'+(cur?teamColor(cur):'#6b7a99')+'">'+esc(p.name)+'</div>'
      +'<select onchange="setLoadRosterTeam(\''+p.id+'\',this.value)" style="padding:4px 6px;font-size:12px;border:1px solid #cbd5e1;border-radius:6px">'+opts+'</select>'
      +'</div>';
   });
@@ -3103,13 +3108,13 @@ function renderLoadRosterBody(){
     const tColor=g.team==='Naranjo'?'#ea6c0a':g.team==='Azul'?'#1d5fa5':g.team==='Flexible'?'#6b7a99':'#b45309';
     const tBg=g.team==='Naranjo'?'#fff3ed':g.team==='Azul'?'#eff6ff':g.team==='Flexible'?'#f6f8fb':'#fffbeb';
     const tBorder=g.team==='Naranjo'?'#fcd9b8':g.team==='Azul'?'#bfdbfe':g.team==='Flexible'?'#e2e8f0':'#fde68a';
-    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+tBg+';border:1px solid '+tBorder+';border-radius:8px;margin-bottom:4px"><span style="font-size:13px;color:'+tColor+';font-weight:600">🐔 '+g.name+'</span><span style="font-size:11px;background:#fff;color:'+tColor+';border:1px solid '+tBorder+';border-radius:10px;padding:2px 7px">'+(g.team||'Galleta')+'</span><span style="color:#92400e;font-size:11px">(de '+(g.invBy||'?')+')</span><button onclick="changeRosterGalletaTeam('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:'+tColor+';font-size:13px;text-decoration:underline">cambiar</button><button onclick="removeRosterGalleta('+i+')" style="background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
+    html+='<div style="display:flex;align-items:center;gap:8px;padding:6px 10px;background:'+tBg+';border:1px solid '+tBorder+';border-radius:8px;margin-bottom:4px"><span style="font-size:13px;color:'+tColor+';font-weight:600">🐔 '+esc(g.name)+'</span><span style="font-size:11px;background:#fff;color:'+tColor+';border:1px solid '+tBorder+';border-radius:10px;padding:2px 7px">'+esc(g.team||'Galleta')+'</span><span style="color:#92400e;font-size:11px">(de '+esc(g.invBy||'?')+')</span><button onclick="changeRosterGalletaTeam('+i+')" style="margin-left:auto;background:transparent;border:none;cursor:pointer;color:'+tColor+';font-size:13px;text-decoration:underline">cambiar</button><button onclick="removeRosterGalleta('+i+')" style="background:transparent;border:none;cursor:pointer;color:#dc2626;font-size:16px;line-height:1">×</button></div>';
   });
   html+='<button class="btn btn-sm" onclick="toggleAddGalletaForm()" style="background:#fffbeb;border-color:#fde68a;color:#b45309;margin-top:4px">+ Galleta invitado</button>'
    +'<div id="add-galleta-form" style="display:none;margin-top:8px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px">'
-   +((S.galletas||[]).length?'<div style="font-size:11px;color:#92400e;margin-bottom:4px">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'+(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(g){return '<button class="btn btn-sm" onclick="prefillRosterGalleta(\''+g.id+'\')" style="background:#fff;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+g.name+'</button>';}).join('')+'</div>':'')
+   +((S.galletas||[]).length?'<div style="font-size:11px;color:#92400e;margin-bottom:4px">Recurrentes guardadas:</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-bottom:8px">'+(S.galletas||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);}).map(function(g){return '<button class="btn btn-sm" onclick="prefillRosterGalleta(\''+g.id+'\')" style="background:#fff;border:1px solid #fde68a;color:#92400e;font-size:11px;padding:3px 8px">'+esc(g.name)+'</button>';}).join('')+'</div>':'')
    +'<input id="ng-name" class="input" placeholder="Nombre del invitado" style="margin-bottom:6px">'
-   +'<select id="ng-owner" class="input" style="margin-bottom:6px"><option value="">— Sin owner —</option>'+sortedPlayers.map(function(p){return '<option value="'+p.id+'">'+p.name+'</option>';}).join('')+'</select>'
+   +'<select id="ng-owner" class="input" style="margin-bottom:6px"><option value="">— Sin owner —</option>'+sortedPlayers.map(function(p){return '<option value="'+p.id+'">'+esc(p.name)+'</option>';}).join('')+'</select>'
    +'<select id="ng-team" class="input" style="margin-bottom:6px"><option value="Galleta">🐔 Galleta</option><option value="Naranjo">🟠 Naranjo</option><option value="Azul">🔵 Azul</option><option value="Flexible">⚪ Flexible</option></select>'+'<select id="ng-skill" class="input" style="margin-bottom:6px"><option value="jugador">⚽ Jugador</option><option value="arquero">🥅 Arquero</option><option value="ambos">⚽🥅 Ambos</option></select>'
    +'<div style="display:flex;gap:6px;justify-content:flex-end"><button class="btn btn-sm" onclick="toggleAddGalletaForm()">Cancelar</button><button class="btn btn-sm btn-primary" onclick="addRosterGalleta()">Agregar</button></div>'
    +'</div></div>';
@@ -3186,7 +3191,7 @@ function renderBackfillBody(){
       html+='<div style="font-size:12px;color:#92400e;background:#fffbeb;padding:6px 10px;border-radius:6px">Sin cuotas pendientes para esta fecha — no hay datos para reconstruir.</div>';
     }else{
       html+='<div style="font-size:12px;color:#475569;display:flex;flex-wrap:wrap;gap:4px">';
-      it.roster.forEach(function(p){html+='<span style="background:#f6f8fb;border:1px solid #e2e8f0;padding:2px 8px;border-radius:14px">'+p.name+'</span>';});
+      it.roster.forEach(function(p){html+='<span style="background:#f6f8fb;border:1px solid #e2e8f0;padding:2px 8px;border-radius:14px">'+esc(p.name)+'</span>';});
       html+='</div>';
     }
     html+='</div>';
@@ -3223,7 +3228,7 @@ function rConfigGalletas(){
        const owner=(S.players||[]).find(function(p){return p.id===g.invById;});
        const ownerName=owner?owner.name:(g.invBy||'?');
        const skillIcon=g.skill==='arquero'?'🥅':g.skill==='ambos'?'⚽🥅':'⚽';
-       return '<tr><td>🐔 '+g.name+'</td><td style="color:#92400e">'+ownerName+'</td><td>'+skillIcon+'</td>'
+       return '<tr><td>🐔 '+esc(g.name)+'</td><td style="color:#92400e">'+esc(ownerName)+'</td><td>'+skillIcon+'</td>'
         +(ROLE==='admin'?'<td style="white-space:nowrap;text-align:right"><button class="btn btn-sm" onclick="openEditGalletaDBModal(\''+g.id+'\')">Editar</button> <button class="btn btn-sm" onclick="deleteGalletaDB(\''+g.id+'\')" style="color:#dc2626;border-color:#fecaca">🗑</button></td>':'')
         +'</tr>';
      }).join('')
@@ -3235,7 +3240,7 @@ function openEditGalletaDBModal(gid){
   if(ROLE!=='admin')return;
   const existing=gid?(S.galletas||[]).find(function(g){return g.id===gid;}):null;
   const players=(S.players||[]).slice().sort(function(a,b){return a.name.localeCompare(b.name);});
-  const ownerOptions='<option value="">— Sin owner —</option>'+players.map(function(p){return '<option value="'+p.id+'" '+(existing&&existing.invById===p.id?'selected':'')+'>'+p.name+'</option>';}).join('');
+  const ownerOptions='<option value="">— Sin owner —</option>'+players.map(function(p){return '<option value="'+p.id+'" '+(existing&&existing.invById===p.id?'selected':'')+'>'+esc(p.name)+'</option>';}).join('');
   const skillOpts=['jugador','arquero','ambos'].map(function(s){return '<option value="'+s+'" '+(existing&&existing.skill===s?'selected':'')+'>'+(s==='jugador'?'⚽ Jugador':s==='arquero'?'🥅 Arquero':'⚽🥅 Ambos')+'</option>';}).join('');
   const body=document.getElementById('modal-galleta-db-body');
   body.innerHTML='<div class="form-group"><label class="form-label">Nombre</label><input id="gdb-name" class="input" value="'+(existing?existing.name.replace(/"/g,'&quot;'):'')+'" placeholder="Nombre del invitado"></div>'
