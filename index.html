@@ -2,6 +2,10 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
+<!-- La vista pública (?publico=1) muestra cuotas y morosos con nombre real.
+     Esto no restringe a quien tenga el link — solo evita que los buscadores
+     la indexen. Decisión consciente, no un descuido. -->
+<meta name="robots" content="noindex">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="512x512" href="/icon-512.png">
 <link rel="apple-touch-icon" sizes="180x180" href="/icon-180.png">
@@ -238,17 +242,81 @@ tr:hover td{background:var(--bg3)}
 .login-btn svg{width:20px;height:20px}
 .login-error{color:#fb7185;font-size:12px;margin-top:10px;display:none}
 .login-loading{color:rgba(255,255,255,.5);font-size:12px;margin-top:10px;display:none}
+#auth-screen{position:fixed;inset:0;background:linear-gradient(135deg,#0f2f3c,#12485b 60%,#1a6b5a);display:flex;align-items:center;justify-content:center;z-index:9999;padding:1.25rem;padding-top:calc(1.25rem + env(safe-area-inset-top,0px));overflow-y:auto}
+.auth-panel{display:none}.auth-panel.on{display:block}
+.auth-google{display:flex;align-items:center;justify-content:center;gap:10px;background:#fff;color:#1a202c;border:none;border-radius:10px;padding:12px 18px;font-size:14px;font-weight:700;cursor:pointer;width:100%;font-family:'Plus Jakarta Sans',sans-serif}
+.auth-google svg{width:18px;height:18px}
+.auth-sep{display:flex;align-items:center;gap:10px;margin:1.125rem 0;color:rgba(255,255,255,.35);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.08em}
+.auth-sep::before,.auth-sep::after{content:'';flex:1;height:1px;background:rgba(255,255,255,.13)}
+.auth-input{width:100%;padding:11px 13px;border-radius:10px;border:1px solid rgba(255,255,255,.16);background:rgba(255,255,255,.06);color:#fff;font-size:15px;font-family:inherit;margin-bottom:8px}
+.auth-input::placeholder{color:rgba(255,255,255,.35)}
+.auth-input:focus{outline:none;border-color:#ea6c0a}
+.auth-link{background:none;border:none;color:rgba(255,255,255,.5);font-size:12px;font-family:inherit;cursor:pointer;text-decoration:underline;padding:6px}
+.auth-msg{font-size:12px;margin-top:10px;min-height:16px;line-height:1.5}
+.auth-msg.err{color:#fb7185}.auth-msg.ok{color:#86efac}.auth-msg.info{color:rgba(255,255,255,.5)}
+.publico-ribbon{position:fixed;left:0;right:0;bottom:0;z-index:350;background:#12485b;color:#fff;padding:9px 14px;padding-bottom:calc(9px + env(safe-area-inset-bottom,0px));display:flex;align-items:center;justify-content:space-between;gap:10px;font-size:12px;font-weight:600}
+@media(max-width:768px){.publico-ribbon{bottom:calc(68px + env(safe-area-inset-bottom,0px));padding-bottom:9px}}
 
 </style>
 <script type="module">
 import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js';
-import { initializeFirestore, doc, getDoc, setDoc, onSnapshot } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { initializeFirestore, doc, getDoc, setDoc, updateDoc, onSnapshot,
+         collection, getDocs, serverTimestamp
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
+import { getAuth, setPersistence, browserLocalPersistence,
+         GoogleAuthProvider, signInWithPopup,
+         createUserWithEmailAndPassword, signInWithEmailAndPassword,
+         sendPasswordResetEmail, updateProfile,
+         signOut as fbSignOut, onAuthStateChanged
+} from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
 // ignoreUndefinedProperties: Firestore rechaza el documento ENTERO si algún campo es
 // undefined (ej. roster.galletaOwner en un jugador que no es galleta). Sin esto,
 // guardar el resultado de un partido fallaba en silencio-ruidoso: consola con
 // FirebaseError, la app decía "no se pudo guardar" y nunca decía por qué.
 const db=initializeFirestore(app,{ignoreUndefinedProperties:true});
+
+const fbAuth=getAuth(app);
+// browserLocalPersistence: en el celular la app se abre y cierra todo el día.
+// Sin esto, cada vez que iOS mata la pestaña habría que loguearse de nuevo.
+setPersistence(fbAuth,browserLocalPersistence).catch(e=>console.warn('persist:',e));
+
+const PUBLICO = new URLSearchParams(location.search).get('publico')==='1'
+             || location.hash==='#publico';
+
+window._sesion={uid:null,email:'',nombre:'',foto:null,estado:null,rol:null,pid:null};
+
+window._auth={
+  googleIn: async ()=>{
+    const prov=new GoogleAuthProvider();
+    prov.setCustomParameters({prompt:'select_account'});
+    return signInWithPopup(fbAuth,prov);
+  },
+  emailIn:  (mail,pass)=>signInWithEmailAndPassword(fbAuth,mail,pass),
+  emailUp:  async (mail,pass,nombre)=>{
+    const cred=await createUserWithEmailAndPassword(fbAuth,mail,pass);
+    if(nombre)await updateProfile(cred.user,{displayName:nombre});
+    return cred;
+  },
+  reset:    (mail)=>sendPasswordResetEmail(fbAuth,mail),
+  out:      async ()=>{ await fbSignOut(fbAuth); location.reload(); }
+};
+
+window._users={
+  listar: async ()=>{
+    const snap=await getDocs(collection(db,'usuarios'));
+    return snap.docs.map(d=>({uid:d.id,...d.data()}));
+  },
+  aprobar: (uid,rol,pid)=>updateDoc(doc(db,'usuarios',uid),{
+    estado:'aprobado', rol, pid: pid||null,
+    aprobadoPor: fbAuth.currentUser?fbAuth.currentUser.uid:null,
+    aprobadoEl: serverTimestamp()
+  }),
+  rechazar: (uid)=>updateDoc(doc(db,'usuarios',uid),{estado:'rechazado',rol:null,pid:null}),
+  setRol:   (uid,rol)=>updateDoc(doc(db,'usuarios',uid),{rol}),
+  setPid:   (uid,pid)=>updateDoc(doc(db,'usuarios',uid),{pid:pid||null}),
+  revocar:  (uid)=>updateDoc(doc(db,'usuarios',uid),{estado:'pendiente',rol:null})
+};
 // _hydrated: sabemos qué hay en la nube (leímos el doc, o confirmamos que no existe).
 // _loaded: la app terminó de arrancar. Son cosas distintas a propósito:
 // escribir SIN estar hidratado pisaría los datos reales con los defaults del HTML.
@@ -288,6 +356,18 @@ function _applyRemote(d){
   if(Array.isArray(d.gastos))S.gastos=d.gastos;
   if(Array.isArray(d.galletas))S.galletas=d.galletas;
 }
+// Qué claves cambiaron desde el último guardado. null/'ALL' = documento
+// completo (admin); un Set = solo esas claves, vía updateDoc (jugador).
+// Existe porque las reglas de Firestore restringen a 'jugador' a tocar
+// solo nextMatch/players: si su escritura mandara el doc entero, la regla
+// la rechaza.
+let _scopeSet=null;
+function _addScope(keys){
+  if(_scopeSet==='ALL')return;
+  if(!keys){_scopeSet='ALL';return}
+  if(!_scopeSet)_scopeSet=new Set();
+  keys.forEach(k=>_scopeSet.add(k));
+}
 async function _flushSave(){
   // Sin hidratar NO se escribe: pisaríamos los datos reales con los defaults del HTML.
   if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
@@ -296,14 +376,31 @@ async function _flushSave(){
   _inFlight=true;
   _setSaveState('saving');
   var stamp=new Date().toISOString(),prev=_lastWrite;
+  var scope=_scopeSet; _scopeSet=null;
   _lastWrite=stamp;                                  // antes del await: suprime también el eco optimista
   try{
-    await setDoc(doc(db,'futbolito','estado'),{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
+    const ref=doc(db,'futbolito','estado');
+    if(!scope||scope==='ALL'){
+      await setDoc(ref,{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
+    }else{
+      // Escritura acotada: solo las claves que realmente cambiaron. Además
+      // de cumplir la regla, evita pisar con datos viejos lo que otro haya
+      // guardado entremedio (cuotas, gastos, resultado del partido).
+      const payload={updatedAt:stamp};
+      scope.forEach(k=>{ payload[k]=(k==='matches')?S.matches.filter(m=>m.season!==2025):S[k]; });
+      await updateDoc(ref,payload);
+    }
     _retry=0;_setSaveState('saved');
   }catch(e){
     _lastWrite=prev;
     console.error('FS write:',e);_setSaveState('error');
-    if(_retry<5){_retry++;_saveTimer=setTimeout(_flushSave,2000*_retry)}
+    if(e&&e.code==='permission-denied'){
+      alert('No tienes permiso para guardar este cambio. Si crees que es un error, avísale al admin.');
+      _retry=99;                    // no reintentar en bucle contra una regla
+    } else if(_retry<5){
+      _addScope(scope==='ALL'?null:(scope?Array.from(scope):null));   // no perder el scope al reintentar
+      _retry++;_saveTimer=setTimeout(_flushSave,2000*_retry);
+    }
   }finally{
     _inFlight=false;
     if(_dirty){_dirty=false;_saveTimer=setTimeout(_flushSave,300)}
@@ -316,9 +413,15 @@ window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','setMy','dashSetMy','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);window._saveToFirestore()}}});}
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
+  // Admin manda el documento completo (null=ALL). Jugador manda solo lo que
+  // le permiten las reglas: nómina y plantel, nunca plata ni historial.
+  window._saveToFirestore(window.ROLE==='admin'?null:['nextMatch','players']);
+}}});}
 // Agrupa ráfagas en una sola escritura. Si aún no sabemos qué hay en la nube, NO descarta: encola.
-window._saveToFirestore=function(){
+window._saveToFirestore=function(scope){
+  if(window.ROLE==='publico')return;     // la vista pública jamás escribe
+  _addScope(scope===undefined?null:scope);
   if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
   _retry=0;                              // acción nueva del usuario: reinicia el backoff
   _setSaveState('saving');
@@ -355,11 +458,155 @@ window._loadData=async()=>{
   _flushQueued();
 };
 window._initApp=_initApp;
-window._currentUser={name:'Admin'};
-window._loadData();
+
+let _appArrancada=false;
+function _arrancarApp(){
+  if(_appArrancada)return; _appArrancada=true;
+  window._appArrancada=true;
+  var pantalla=document.getElementById('auth-screen');
+  if(pantalla)pantalla.style.display='none';
+  if(PUBLICO){
+    var rb=document.createElement('div');
+    rb.className='publico-ribbon';
+    rb.innerHTML='<span>👀 Vista pública · solo lectura</span>'
+      +'<button class="btn btn-sm" onclick="location.search=\'\'">Entrar</button>';
+    document.body.appendChild(rb);
+    var mainEl=document.getElementById('main');
+    if(mainEl)mainEl.style.paddingBottom='140px';
+  }
+  window._loadData();                 // el _initApp() de adentro dibuja todo
+}
+window._arrancarApp=_arrancarApp;
+
+async function _asegurarDocUsuario(u){
+  const ref=doc(db,'usuarios',u.uid);
+  const snap=await getDoc(ref);
+  if(snap.exists()){
+    // update permitido por la regla: solo campos cosméticos
+    updateDoc(ref,{ultimoAcceso:serverTimestamp()}).catch(()=>{});
+    return snap.data();
+  }
+  const nuevo={
+    email:u.email||'',
+    nombre:u.displayName||(u.email||'').split('@')[0]||'Sin nombre',
+    foto:u.photoURL||null,
+    estado:'pendiente', rol:null, pid:null,
+    creadoEl:serverTimestamp(), ultimoAcceso:serverTimestamp()
+  };
+  await setDoc(ref,nuevo);            // create: la regla lo fuerza a 'pendiente'
+  return nuevo;
+}
+
+async function _bootAuth(){
+  if(PUBLICO){                        // modo espejo: sin login, solo lectura
+    window.ROLE='publico'; window.MY_PID=null;
+    _arrancarApp();
+    return;
+  }
+  onAuthStateChanged(fbAuth, async (u)=>{
+    if(!u){ if(typeof window._authPanel==='function')window._authPanel('out'); return; }
+    if(typeof window._authPanel==='function')window._authPanel('cargando');
+    let d;
+    try{ d=await _asegurarDocUsuario(u); }
+    catch(e){ console.error('usuarios:',e); if(typeof window._authPanel==='function')window._authPanel('error',e.message); return; }
+
+    window._sesion={uid:u.uid,email:u.email||'',nombre:d.nombre||'',foto:d.foto||null,
+                    estado:d.estado,rol:d.rol,pid:d.pid||null};
+    window.SESION=window._sesion;
+
+    if(d.estado==='rechazado'){ if(typeof window._authPanel==='function')window._authPanel('rechazado'); return; }
+    if(d.estado!=='aprobado'){
+      if(typeof window._authPanel==='function')window._authPanel('pendiente');
+      // El admin aprueba desde su celular y esta pantalla se abre sola,
+      // sin que la persona tenga que recargar ni entender qué pasó.
+      onSnapshot(doc(db,'usuarios',u.uid),s=>{
+        const x=s.data(); if(!x)return;
+        window._sesion.estado=x.estado;
+        if(x.estado==='aprobado'){
+          window._sesion.rol=x.rol; window._sesion.pid=x.pid||null;
+          window.ROLE=(x.rol==='admin')?'admin':'jugador';
+          window.MY_PID=x.pid||null;
+          _arrancarApp();
+        } else if(x.estado==='rechazado' && typeof window._authPanel==='function'){
+          window._authPanel('rechazado');
+        }
+      });
+      return;
+    }
+    window.ROLE=(d.rol==='admin')?'admin':'jugador';
+    window.MY_PID=d.pid||null;
+    _arrancarApp();
+  });
+}
+_bootAuth();
 </script>
 </head>
 <body>
+<div id="auth-screen">
+  <div class="login-card">
+
+    <div class="auth-panel on" id="auth-p-cargando">
+      <span class="login-emoji">⚽</span>
+      <div class="login-title">Futbolito</div>
+      <div class="auth-msg info">Cargando…</div>
+    </div>
+
+    <div class="auth-panel" id="auth-p-out">
+      <span class="login-emoji">⚽</span>
+      <div class="login-title">Futbolito</div>
+      <div class="login-sub">Temporada 2026</div>
+
+      <button class="auth-google" onclick="authGoogle()">
+        <svg viewBox="0 0 48 48"><path fill="#4285F4" d="M45 24.5c0-1.6-.1-2.7-.4-4H24v7.6h12c-.2 2-1.5 5-4.4 7l6.7 5.2C42.2 36.6 45 31 45 24.5z"/><path fill="#34A853" d="M24 46c5.9 0 10.9-2 14.5-5.3l-6.9-5.4c-1.9 1.3-4.4 2.2-7.6 2.2-5.8 0-10.7-3.8-12.5-9.1l-7.1 5.5C8 41.2 15.4 46 24 46z"/><path fill="#FBBC05" d="M11.5 28.4c-.5-1.4-.7-2.9-.7-4.4s.3-3 .7-4.4l-7.1-5.5C2.9 17 2 20.4 2 24s.9 7 2.4 9.9l7.1-5.5z"/><path fill="#EA4335" d="M24 10.8c3.3 0 5.5 1.4 6.8 2.6l6-5.9C33 4.1 29.9 2 24 2 15.4 2 8 6.8 4.4 14.1l7.1 5.5c1.8-5.3 6.7-8.8 12.5-8.8z"/></svg>
+        Entrar con Google
+      </button>
+
+      <div class="auth-sep">o con tu correo</div>
+
+      <input class="auth-input" type="email" id="auth-mail" placeholder="correo@ejemplo.com" autocomplete="username" inputmode="email">
+      <input class="auth-input" type="password" id="auth-pass" placeholder="Contraseña" autocomplete="current-password">
+      <input class="auth-input" type="text" id="auth-nombre" placeholder="Tu nombre" style="display:none">
+      <button class="login-btn" id="auth-submit" onclick="authEmailSubmit()">Entrar</button>
+      <div style="display:flex;justify-content:space-between;margin-top:8px">
+        <button class="auth-link" id="auth-toggle" onclick="authToggleModo()">Crear cuenta</button>
+        <button class="auth-link" onclick="authReset()">Olvidé mi clave</button>
+      </div>
+      <div class="auth-msg err" id="auth-msg"></div>
+    </div>
+
+    <div class="auth-panel" id="auth-p-pendiente">
+      <span class="login-emoji">⏳</span>
+      <div class="login-title">Casi listo</div>
+      <div class="login-sub" id="auth-pend-quien"></div>
+      <div style="background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.13);border-radius:12px;padding:14px;font-size:13px;color:rgba(255,255,255,.75);line-height:1.6;text-align:left">
+        Tu cuenta quedó registrada, pero todavía no tiene acceso.<br><br>
+        Avísale al admin del grupo para que te apruebe y te vincule con tu nombre en el plantel. Cuando lo haga, esta pantalla se abre sola.
+      </div>
+      <div style="margin-top:1rem"><button class="btn" onclick="authSalir()">Salir</button></div>
+      <div style="margin-top:10px"><button class="auth-link" onclick="location.search='?publico=1'">Ver la página pública mientras tanto</button></div>
+    </div>
+
+    <div class="auth-panel" id="auth-p-rechazado">
+      <span class="login-emoji">🚫</span>
+      <div class="login-title">Sin acceso</div>
+      <div class="login-sub">Esta cuenta no tiene acceso al grupo.</div>
+      <div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.6">Si crees que es un error, habla con el admin del grupo.</div>
+      <div style="margin-top:1.25rem"><button class="btn" onclick="authSalir()">Salir</button></div>
+      <div style="margin-top:10px"><button class="auth-link" onclick="location.search='?publico=1'">Ver la página pública</button></div>
+    </div>
+
+    <div class="auth-panel" id="auth-p-error">
+      <span class="login-emoji">⚠️</span>
+      <div class="login-title">Algo falló</div>
+      <div class="auth-msg err" id="auth-err-detalle"></div>
+      <div style="margin-top:1.25rem;display:flex;gap:8px;justify-content:center">
+        <button class="btn" onclick="location.reload()">Reintentar</button>
+        <button class="btn" onclick="authSalir()">Salir</button>
+      </div>
+    </div>
+
+  </div>
+</div>
 <!-- acceso directo -->
 <div id="app">
 
@@ -396,20 +643,6 @@ window._loadData();
   </main>
 </div>
 
-<div class="modal-overlay" id="modal-admin-login">
-  <div class="modal" style="max-width:320px">
-    <div class="modal-title" style="font-size:16px">Acceso admin</div>
-    <div class="form-group">
-      <div class="form-label">Clave</div>
-      <input class="input" type="password" id="admin-pass" placeholder="••••••••" onkeydown="if(event.key==='Enter')checkAdminPass()">
-    </div>
-    <div id="admin-error" style="color:#dc2626;font-size:12px;margin-top:-4px;margin-bottom:8px;display:none">Clave incorrecta</div>
-    <div class="modal-footer">
-      <button class="btn" onclick="document.getElementById('modal-admin-login').classList.remove('open')">Cancelar</button>
-      <button class="btn btn-primary" onclick="checkAdminPass()">Entrar</button>
-    </div>
-  </div>
-</div>
 
 <div class="modal-overlay" id="modal-partido">
   <div class="modal">
@@ -673,7 +906,12 @@ function closeSidebarMobile(){
   document.getElementById('overlay').classList.remove('show');
 }
 
-let ROLE=(typeof localStorage!=='undefined' && localStorage.getItem('futbolito_role'))||'user';
+// var (no let): así queda accesible como window.ROLE desde el <script type="module">
+// que resuelve la sesión real. Default 'publico': si la cadena de auth falla,
+// la app degrada a solo-lectura, nunca a un rol con permisos.
+var ROLE='publico';
+var MY_PID=null;
+var SESION={uid:null,email:'',nombre:'',foto:null,estado:null,rol:null,pid:null};
 let SEASON='2026'; // 2025 | 2026 | all
 function setRole(r){
   ROLE=r;
@@ -818,7 +1056,7 @@ function gstats(ms){
 }
 
 function buildNav(){
-  var fil=NAV.filter(function(it){return it.key!=='config'||ROLE==='admin';});
+  var fil=NAV.filter(function(it){return it.key!=='config'||ROLE==='admin'||ROLE==='jugador';});
   var sideHtml='';
   fil.forEach(function(it){
     var a=S.view===it.key?' active':'';
@@ -831,11 +1069,7 @@ function buildNav(){
   updateAdminZone();
 }
 
-function dashSetMy(status){
-  if(ROLE!=='admin')return;
-  if(S.nextMatch.roster[0]) S.nextMatch.roster[0].status=status;
-  rDash();
-}
+function dashSetMy(status){ setMyStatus(status); rDash(); }
 
 function go(key){
   // Actualizar bottom nav
@@ -850,6 +1084,19 @@ function go(key){
   ({dashboard:rDash,proximo:rProximo,partidos:rPartidos,cuotas:rCuotas,reglas:rReglas,asado:rAsado,config:rConfig})[key]();
 }
 
+// El "yo" real de la sesión. Antes esto era siempre S.players[0] / roster[0]
+// — o sea, el mismo jugador para todo el mundo. MY_PID viene de la sesión
+// autenticada (usuarios/{uid}.pid).
+function myPlayer(){ return MY_PID?(S.players||[]).find(p=>p.id===MY_PID)||null:null; }
+function myRosterRow(){ return MY_PID?(S.nextMatch.roster||[]).find(p=>p.pid===MY_PID)||null:null; }
+function esMiFila(pid){ return !!MY_PID && pid===MY_PID; }
+// Mi galleta: la fila de invitado que yo traje.
+function esMiGalleta(p){ return !!MY_PID && !!p && !!p.galleta && p.galletaOwner===MY_PID; }
+function puedoEditarFila(p){
+  if(ROLE==='admin')return true;
+  if(ROLE!=='jugador'||!p)return false;
+  return esMiFila(p.pid)||esMiGalleta(p);
+}
 function getSkill(p){
   // Galletas tienen su propio skill en p.skill
   if(p.galleta) return p.skill||'jugador';
@@ -1359,7 +1606,7 @@ function rDash(){
 
     <!-- PRÓXIMO PARTIDO COMPACTO -->
     ${(()=>{
-      const me=S.nextMatch.roster[0];
+      const me=myRosterRow();
       const meSt=me?me.status:'Sin confirmar';
       const pct=Math.round(nmTotal/14*100);
       const st2=getMatchState(nmConf,nmRes,S.nextMatch.date);
@@ -1379,9 +1626,16 @@ function rDash(){
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
         +'<span style="font-size:15px;font-weight:800;color:var(--text)">'+nmTotal+'<span style="font-size:12px;font-weight:500;color:#8896b3">/14 confirmados</span></span>'
         +'</div>'
-        +'<div style="height:5px;background:#f1f4f8;border-radius:3px;overflow:hidden;margin-bottom:10px">'
+        +'<div style="height:5px;background:#f1f4f8;border-radius:3px;overflow:hidden'+(ROLE==='jugador'?';margin-bottom:10px':'')+'">'
         +'<div style="width:'+pct+'%;height:100%;background:'+barC+';border-radius:3px"></div>'
         +'</div>'
+        +(ROLE!=='jugador'?'':(
+          '<div class="att-group">'
+          +'<button class="att-btn'+(meSt==='Confirmado'?' att-voy':'')+'" onclick="dashSetMy(\'Confirmado\')">✓ Voy</button>'
+          +'<button class="att-btn'+(meSt==='Reserva'?' att-reserva':'')+'" onclick="dashSetMy(\'Reserva\')">Reserva</button>'
+          +'<button class="att-btn'+(meSt==='Baja'?' att-baja':'')+'" onclick="dashSetMy(\'Baja\')">💅🏻 Me bajo</button>'
+          +'</div>'
+        ))
         +'</div>';
     })()}
 
@@ -1613,11 +1867,12 @@ function rProximo(){
   const total=Math.min(14,conf+Math.min(res,Math.max(0,14-conf)));
   const faltan=Math.max(0,14-total);
   const pct=Math.round((total/14)*100);
-  const me=r[0];
+  const me=myRosterRow();
   const state=getMatchState(conf,res,nm.date);
   const countdown=getCountdown(nm.date);
   const stateMsg=getStateMsg(conf,res,nm.date);
 
+  const yoNombre=esc((myPlayer()||{}).name||SESION.nombre||'');
   const myStatus=me?.status||'Sin confirmar';
   const myBadge=myStatus==='Confirmado'?`<span style="background:#f0fdf4;color:#16a34a;border:1px solid #bbf7d0;border-radius:50px;padding:5px 14px;font-size:13px;font-weight:600">Confirmado</span>`:
     myStatus==='Reserva'?`<span style="background:#fffbeb;color:#b45309;border:1px solid #fde68a;border-radius:50px;padding:5px 14px;font-size:13px;font-weight:600">Reserva</span>`:
@@ -1625,12 +1880,12 @@ function rProximo(){
     `<span style="background:var(--bg3);color:var(--text2);border:1px solid var(--border);border-radius:50px;padding:5px 14px;font-size:13px;font-weight:600">Sin confirmar</span>`;
 
   const myMsgColor=myStatus==='Confirmado'?'#15803d':myStatus==='Reserva'?'#b45309':myStatus==='Baja'?'#b91c1c':'var(--text2)';
-  const myMsg=myStatus==='Confirmado'?'✅ Elías, estás confirmado para jugar.':
-    myStatus==='Reserva'?'🟡 Elías, quedaste en reserva.':
-    myStatus==='Baja'?'💅🏻 Elías, te bajaste del partido.':
-    'Elías, hoy se corre, no se mira desde la casa.';
-  const myPlayer=S.players.find(p=>p.id===me?.pid)||S.players.find(p=>p.name===me?.name)||S.players[0];
-  const mySkill=myPlayer?myPlayer.skill:'jugador';
+  const myMsg=myStatus==='Confirmado'?'✅ '+yoNombre+', estás confirmado para jugar.':
+    myStatus==='Reserva'?'🟡 '+yoNombre+', quedaste en reserva.':
+    myStatus==='Baja'?'💅🏻 '+yoNombre+', te bajaste del partido.':
+    yoNombre+', hoy se corre, no se mira desde la casa.';
+  const mp=myPlayer();
+  const mySkill=mp?(mp.skill||'jugador'):'jugador';
   const mySkillLabel=mySkill==='arquero'?'🧤 Arquero':mySkill==='ambos'?'🧤⚽ Arquero o jugador':'⚽ Jugador';
   const mySkillBg=mySkill==='arquero'?'#f0fdf4':mySkill==='ambos'?'#f0fdf4':'#f6f8fb';
   const mySkillC=mySkill==='arquero'?'#16a34a':mySkill==='ambos'?'#16a34a':'#6b7a99';
@@ -1676,6 +1931,8 @@ function rProximo(){
       </div>
     </div>
 
+    ${misAccionesHTML()}
+
     <!-- NÓMINA -->
     <div class="card">
       <div style="margin-bottom:12px">
@@ -1697,8 +1954,7 @@ function rProximo(){
             +'<td style="color:var(--text3);font-size:12px">'+(i+1)+'</td>'
             +(()=>{
               const sk2=getSkill(p);
-              const me0=S.nextMatch.roster[0];
-              const canEditSk=p.galleta&&(ROLE==='admin'||p.galletaOwner===me0?.pid);
+              const canEditSk=p.galleta&&puedoEditarFila(p);
               const skEmoji2=sk2==='arquero'?' 🧤':sk2==='ambos'?' 🧤⚽':' ⚽';
               const skEdit=canEditSk
                 ?' <button onclick="openSkillPicker(&apos;'+p.pid+'&apos;)" style="background:none;border:none;cursor:pointer;font-size:13px;padding:0;margin-left:1px;line-height:1;vertical-align:middle">'+skEmoji2.trim()+'</button>'
@@ -1715,8 +1971,7 @@ function rProximo(){
               const stColor=p.status==='Confirmado'?'#16a34a':p.status==='Reserva'?'#b45309':p.status==='Baja'?'#dc2626':'#8896b3';
               const stBg=p.status==='Confirmado'?'#f0fdf4':p.status==='Reserva'?'#fffbeb':p.status==='Baja'?'#fef2f2':'#f6f8fb';
               const stBrd=p.status==='Confirmado'?'#bbf7d0':p.status==='Reserva'?'#fde68a':p.status==='Baja'?'#fecaca':'#e2e8f0';
-              const me=S.nextMatch.roster[0];
-              const canEdit=ROLE==='admin';
+              const canEdit=puedoEditarFila(p);
               if(!canEdit){
                 return '<td><span style="background:'+stBg+';color:'+stColor+';border:1px solid '+stBrd+';border-radius:20px;padding:3px 8px;font-size:11px;font-weight:600">'+(p.status==='Confirmado'?'✓ Voy':p.status==='Reserva'?'Reserva':p.status==='Baja'?'💅🏻 Baja':'Sin resp.')+'</span></td>';
               }
@@ -1914,8 +2169,12 @@ function saveFinalizar(){if(ROLE!=='admin')return;
   rProximo();
   rDash();
 }
-function setMy(s){S.nextMatch.roster=S.nextMatch.roster.map((p,i)=>i===0?{...p,status:s}:p);rProximo()}
-function toggleMyGoalkeeper(){S.nextMatch.roster=S.nextMatch.roster.map((p,i)=>i===0?{...p,goalkeeper:!p.goalkeeper}:p);rProximo()}
+function toggleMyGoalkeeper(){
+  if(ROLE!=='jugador'&&ROLE!=='admin')return;
+  if(!MY_PID)return;
+  S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===MY_PID?{...p,goalkeeper:!p.goalkeeper}:p);
+  rProximo();
+}
 function setMatchTeam(pid,team){if(ROLE!=='admin')return;S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,matchTeam:team}:p);rProximo()}
 function toggleGoalkeeper(pid){if(ROLE!=='admin')return;S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,goalkeeper:!p.goalkeeper}:p);rProximo()}
 function autoAsignar(){
@@ -1931,9 +2190,9 @@ function autoAsignar(){
   });
   rProximo();
 }
-function openSkillPicker(pid){if(ROLE!=='admin')return;
+function openSkillPicker(pid){
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
-  if(!target)return;
+  if(!puedoEditarFila(target))return;
   const sk=target.skill||'jugador';
   const d=document.createElement('div');
   d.id='skill-picker-overlay';
@@ -1969,19 +2228,77 @@ function togglePaid(pid){
   rCuotas();
 }
 function setGalletaSkill(pid,sk){
-  const me=S.nextMatch.roster[0];
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
-  if(ROLE!=='admin')return;
+  if(!puedoEditarFila(target))return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,skill:sk}:p);
   rProximo();
 }
 function setRSt(pid,s){
-  const me=S.nextMatch.roster[0];
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
-  // Admin puede todo; usuario solo puede cambiar su propio estado o el de su galleta
-  if(ROLE!=='admin') return;
+  // Admin puede todo; jugador solo puede cambiar su propio estado o el de su galleta.
+  if(!puedoEditarFila(target))return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,status:s}:p);
   rProximo();
+}
+
+// Vocabulario existente. 'Sin confirmar' no se ofrece: es el default, no una
+// acción — que alguien "des-responda" no aporta nada y ensucia el contador.
+var ST_AUTO=['Confirmado','Reserva','Baja'];
+
+function setMyStatus(s){
+  if(ROLE!=='jugador'&&ROLE!=='admin')return;      // publico / pendiente: nunca
+  if(!MY_PID)return;                               // cuenta sin jugador vinculado
+  if(ST_AUTO.indexOf(s)<0)return;                  // nadie inventa estados nuevos
+  var fila=(S.nextMatch.roster||[]).find(function(p){return p.pid===MY_PID});
+  if(!fila){alert('No estás en la nómina de este partido. Pídele al admin que te agregue.');return}
+  // No se auto-agrega nadie: la composición de la nómina la maneja el admin,
+  // y la regla de Firestore además exige que el tamaño del roster no cambie.
+  S.nextMatch.roster=S.nextMatch.roster.map(function(p){
+    return p.pid===MY_PID?Object.assign({},p,{status:s}):p;
+  });
+  rProximo();
+}
+
+function setMySkill(sk){
+  if(ROLE!=='jugador'&&ROLE!=='admin')return;
+  if(!MY_PID)return;
+  if(['jugador','ambos','arquero'].indexOf(sk)<0)return;
+  S.players=S.players.map(function(p){return p.id===MY_PID?Object.assign({},p,{skill:sk}):p});
+  // La fila del roster guarda su propio skill: si no se sincroniza, el balance
+  // de arqueros del próximo partido sigue mostrando el skill viejo.
+  S.nextMatch.roster=(S.nextMatch.roster||[]).map(function(p){
+    return (p.pid===MY_PID&&!p.galleta)?Object.assign({},p,{skill:sk}):p;
+  });
+  rConfig();
+  if(S.view==='proximo')rProximo();
+}
+
+// Tarjeta "Mi estado" — solo rol jugador. El admin ya tiene el <select> por
+// fila; el rol publico nunca la ve (los checks son ROLE==='jugador', no
+// ROLE!=='admin', para que publico quede afuera por construcción).
+function misAccionesHTML(){
+  if(ROLE!=='jugador')return'';
+  var yo=esc((myPlayer()||{}).name||SESION.nombre||'');
+  if(!MY_PID)return'<div class="card"><div class="card-title">Mi estado</div>'
+    +'<div class="empty">Tu cuenta todavía no está vinculada a un jugador. Avísale al admin.</div></div>';
+  var fila=myRosterRow();
+  if(!fila)return'<div class="card"><div class="card-title">Mi estado</div>'
+    +'<div class="empty">'+yo+', no estás en la nómina de este partido.<br>Pídele al admin que te agregue.</div></div>';
+  var s=fila.status||'Sin confirmar';
+  var col=s==='Confirmado'?'#15803d':s==='Reserva'?'#b45309':s==='Baja'?'#b91c1c':'var(--text2)';
+  var msg=s==='Confirmado'?'✅ '+yo+', estás confirmado para jugar.'
+        :s==='Reserva'?'🟡 '+yo+', quedaste en reserva.'
+        :s==='Baja'?'💅🏻 '+yo+', te bajaste del partido.'
+        :yo+', hoy se corre, no se mira desde la casa.';
+  return'<div class="card">'
+    +'<div class="row" style="margin-bottom:6px"><div class="card-title" style="margin-bottom:0">Mi estado</div>'
+    +'<span class="badge badge-'+(s==='Confirmado'?'green':s==='Reserva'?'yellow':s==='Baja'?'red':'neutral')+'">'+s+'</span></div>'
+    +'<div style="font-size:13px;color:'+col+'">'+msg+'</div>'
+    +'<div class="att-group">'
+    +'<button class="att-btn'+(s==='Confirmado'?' att-voy':'')+'" onclick="setMyStatus(\'Confirmado\')">✓ Voy</button>'
+    +'<button class="att-btn'+(s==='Reserva'?' att-reserva':'')+'" onclick="setMyStatus(\'Reserva\')">Reserva</button>'
+    +'<button class="att-btn'+(s==='Baja'?' att-baja':'')+'" onclick="setMyStatus(\'Baja\')">💅🏻 Me bajo</button>'
+    +'</div></div>';
 }
 let gSkill='jugador', gStatus='Confirmado';
 function openAddJugadorNomina(){
@@ -2151,10 +2468,9 @@ function selectGStatus(st){
 function saveGalleta(){if(ROLE!=='admin')return;
   const name=document.getElementById('g-name').value.trim();
   if(!name)return;
-  const myName=S.nextMatch.roster[0]?.name||'Admin';
   const pid='g'+Date.now();
   const ownerSel=document.getElementById('g-owner');
-  const ownerId=ownerSel&&ownerSel.value?ownerSel.value:(S.players[0]?.id||'');
+  const ownerId=ownerSel&&ownerSel.value?ownerSel.value:(MY_PID||(S.players[0]||{}).id||'');
   const ownerP=S.players.find(x=>x.id===ownerId);
   const ownerName=ownerP?ownerP.name:'Admin';
   const ownerPid=ownerId;
@@ -2372,15 +2688,15 @@ function rCuotas(){
         <tbody>${(()=>{
           const activos=S.nextMatch.roster.filter(p=>p.status==='Confirmado'||p.status==='Reserva');
           const fee=S.nextMatch.fee||4000;
-          const me0=S.nextMatch.roster[0];
           return activos.map(p=>{
             const galletaTag=p.galleta?'<span style="background:#f5f0eb;color:#6b5744;border:1px solid #a8896f;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:3px">🍪 de '+esc(p.invBy)+'</span>':'';
             const paid=p.paid||false;
             const canPay=ROLE==='admin';
+            const esMia=esMiFila(p.pid);
             const payBtn=canPay
               ?'<button onclick="togglePaid(&apos;'+p.pid+'&apos;)" style="padding:3px 10px;border-radius:20px;font-size:11px;font-weight:600;cursor:pointer;border:1.5px solid '+(paid?'#bbf7d0':'#e2e8f0')+';background:'+(paid?'#f0fdf4':'#fff')+';color:'+(paid?'#16a34a':'#8896b3')+';font-family:inherit">'+(paid?'✓ Pagado':'Pagado')+'</button>'
               :(paid?'<span style="color:#16a34a;font-size:11px;font-weight:600">✓</span>':'<span style="color:#c4cdd9;font-size:11px">—</span>');
-            return '<tr>'
+            return '<tr'+(esMia?' style="background:var(--orange-soft)"':'')+'>'
               +'<td style="font-weight:600">'+esc(p.name)+galletaTag+'</td>'
               +'<td style="text-align:center;white-space:nowrap">'+(ROLE==='admin'?'<button onclick="editCuotaJugador(&apos;'+p.pid+'&apos;)" style="background:none;border:none;cursor:pointer;color:#6b7a99;font-size:13px;font-weight:500;padding:2px 4px;border-radius:4px;font-family:inherit" title="Editar monto">'+clp(p.fee||fee)+' ✏️</button>':'<span style="color:#6b7a99">'+clp(p.fee||fee)+'</span>')+'</td>'
               +'<td style="text-align:center">'+payBtn+'</td>'
@@ -2782,7 +3098,7 @@ function cfgExportJSON(){
   }catch(e){alert('No se pudo descargar el respaldo: '+e.message)}
 }
 function rConfig(){
-  const myPlayer=S.players&&S.players.length?S.players[0]:null;
+  const mp=myPlayer();
   const __galletasHtml=(typeof rConfigGalletas==='function')?rConfigGalletas():'';
   if(ROLE==='admin'){
     const ps=(S.players||[]).slice().sort(function(a,b){
@@ -2801,6 +3117,9 @@ function rConfig(){
     <div class="page-header"><div><div class="page-eyebrow">Administración</div><div class="page-title">Configuración</div></div></div>
 
     <div class="card" id="cfg-estado">${cfgEstadoInner()}</div>
+
+    <div class="card" id="cfg-accesos" style="margin-bottom:12px">Cargando…</div>
+    <div class="card" id="cfg-usuarios" style="margin-bottom:12px">Cargando…</div>
 
     <div class="card" style="margin-bottom:12px">
       <div class="row" style="margin-bottom:10px">
@@ -2860,34 +3179,46 @@ function rConfig(){
 
     <div class="card">
       <div class="card-title">Acceso admin</div>
+      <div class="stat-row"><span class="stat-label">Correo</span><span class="stat-val">${esc(SESION.email||'')}</span></div>
       <div class="stat-row"><span class="stat-label">Sesión</span><span class="stat-val"><span class="badge badge-green">Admin</span></span></div>
-      <div style="display:flex;gap:8px;margin-top:1rem"><button class="btn btn-sm" onclick="adminLogout()">Salir de admin</button></div>
+      <div style="display:flex;gap:8px;margin-top:1rem"><button class="btn btn-sm" onclick="authSalir()">Cerrar sesión</button></div>
     </div>`;
-  } else if(!myPlayer){
+    setTimeout(cargarUsuarios,0);
+  } else if(ROLE==='publico'){
     document.getElementById('page-config').innerHTML=`
-    <div class="page-header"><div><div class="page-eyebrow">Configuración</div><div class="page-title">Sin datos</div></div></div>
-    <div class="card"><div class="empty">Todavía no hay jugadores cargados.</div></div>`;
+    <div class="page-header"><div><div class="page-eyebrow">Configuración</div><div class="page-title">Solo con sesión</div></div></div>
+    <div class="card"><div class="empty">Esta sección requiere iniciar sesión.</div></div>`;
+  } else if(!mp){
+    document.getElementById('page-config').innerHTML=`
+    <div class="page-header"><div><div class="page-eyebrow">Mi perfil</div><div class="page-title">${esc(SESION.nombre||'Mi cuenta')}</div></div></div>
+    <div class="card">
+      <div class="stat-row"><span class="stat-label">Correo</span><span class="stat-val">${esc(SESION.email||'')}</span></div>
+      <div class="stat-row"><span class="stat-label">Rol</span><span class="stat-val"><span class="badge badge-neutral">${esc(SESION.rol||'—')}</span></span></div>
+      <div class="alert-yellow" style="margin-top:1rem">Tu cuenta todavía no está vinculada a un jugador del plantel. Pídele al admin que te vincule para poder confirmar tu asistencia.</div>
+      <div style="margin-top:1rem"><button class="btn btn-sm" onclick="authSalir()">Cerrar sesión</button></div>
+    </div>`;
   } else {
-    const sk=myPlayer.skill||'jugador';
-    const teamColor=myPlayer.team==='Naranjo'?'var(--orange-soft)':myPlayer.team==='Azul'?'var(--blue-soft)':'#f6f8fb';
-    const teamBorder=myPlayer.team==='Naranjo'?'var(--orange-border)':myPlayer.team==='Azul'?'var(--blue-border)':'var(--border)';
-    const teamIcon=myPlayer.team==='Naranjo'?'🟠':myPlayer.team==='Azul'?'🔵':'⚽';
+    const sk=mp.skill||'jugador';
+    const teamColor=mp.team==='Naranjo'?'var(--orange-soft)':mp.team==='Azul'?'var(--blue-soft)':'#f6f8fb';
+    const teamBorder=mp.team==='Naranjo'?'var(--orange-border)':mp.team==='Azul'?'var(--blue-border)':'var(--border)';
+    const teamIcon=mp.team==='Naranjo'?'🟠':mp.team==='Azul'?'🔵':'⚽';
     document.getElementById('page-config').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Mi perfil</div><div class="page-title">Configuración</div></div></div>
     <div class="card">
       <div style="display:flex;align-items:center;gap:14px;margin-bottom:1.25rem;padding-bottom:1rem;border-bottom:1px solid var(--border)">
         <div style="width:52px;height:52px;border-radius:50%;background:${teamColor};border:2px solid ${teamBorder};display:flex;align-items:center;justify-content:center;font-size:24px;flex-shrink:0">${teamIcon}</div>
         <div>
-          <div style="font-size:18px;font-weight:800;color:var(--text)">${esc(myPlayer.name)}</div>
-          <div style="font-size:12px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px">${teamTag(myPlayer.team)}<span class="badge badge-${myPlayer.active?'green':'neutral'}">${myPlayer.active?'Activo':'Inactivo'}</span></div>
+          <div style="font-size:18px;font-weight:800;color:var(--text)">${esc(mp.name)}</div>
+          <div style="font-size:12px;color:var(--text2);margin-top:3px;display:flex;align-items:center;gap:6px">${teamTag(mp.team)}<span class="badge badge-${mp.active?'green':'neutral'}">${mp.active?'Activo':'Inactivo'}</span></div>
         </div>
       </div>
       <div class="form-label" style="margin-bottom:10px">Mi posición / skill</div>
       <div style="display:flex;gap:8px">
-        <button onclick="setSkill('${myPlayer.id}','jugador')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='jugador'?'#6b7a99':'#e2e8f0'};background:${sk==='jugador'?'#f1f4f8':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">⚽<br>Jugador</button>
-        <button onclick="setSkill('${myPlayer.id}','ambos')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='ambos'?'#bbf7d0':'#e2e8f0'};background:${sk==='ambos'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤⚽<br>Ambos</button>
-        <button onclick="setSkill('${myPlayer.id}','arquero')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='arquero'?'#bbf7d0':'#e2e8f0'};background:${sk==='arquero'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤<br>Arquero</button>
+        <button onclick="setMySkill('jugador')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='jugador'?'#6b7a99':'#e2e8f0'};background:${sk==='jugador'?'#f1f4f8':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">⚽<br>Jugador</button>
+        <button onclick="setMySkill('ambos')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='ambos'?'#bbf7d0':'#e2e8f0'};background:${sk==='ambos'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤⚽<br>Ambos</button>
+        <button onclick="setMySkill('arquero')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='arquero'?'#bbf7d0':'#e2e8f0'};background:${sk==='arquero'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤<br>Arquero</button>
       </div>
+      <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)"><button class="btn btn-sm" onclick="authSalir()">Cerrar sesión</button></div>
     </div>`;
   }
 }
@@ -2911,7 +3242,7 @@ function toggleP(id){if(ROLE!=='admin')return;
   }
   S.players=S.players.map(p=>p.id===id?{...p,active:!p.active}:p);rConfig()
 }
-function setSkill(id,sk){S.players=S.players.map(p=>p.id===id?{...p,skill:sk}:p);rConfig()}
+function setSkill(id,sk){if(ROLE!=='admin')return;S.players=S.players.map(p=>p.id===id?{...p,skill:sk}:p);rConfig()}
 function setName(id,name){
   if(ROLE!=='admin'){rConfig();return}
   var n=String(name||'').trim();
@@ -2988,55 +3319,243 @@ function saveJugador(){if(ROLE!=='admin')return;
 }
 
 
-// Nota: acá vivía un bloque USERS con 9 contraseñas en texto plano, más doLogin()
-// y doLogout(). Era código muerto: no existe #login-screen en el HTML y nadie los
-// llamaba, así que esas claves no servían para entrar — solo quedaban legibles en
-// "ver código fuente" de un repo público. El único acceso real es ADMIN_PASS.
+// Nota: acá vivía un bloque USERS con 9 contraseñas en texto plano, y luego
+// ADMIN_PASS (una sola clave ofuscada en base64, checkAdminPass/adminLogout).
+// Ambos eran solo variables de cliente: cualquiera con la consola abierta
+// podía escribir ROLE='admin' y saltárselos. Reemplazados por Firebase Auth
+// real + reglas de Firestore server-side (ver window._auth / _bootAuth en
+// el <script type="module">).
 
-// Admin login
-var ADMIN_PASS=atob('YWRtaW4xMjM0');
-function openAdminLogin(){
-  var p=document.getElementById('admin-pass');
-  var e=document.getElementById('admin-error');
-  if(p)p.value='';if(e)e.style.display='none';
-  document.getElementById('modal-admin-login').classList.add('open');
+let AUTH_MODO='entrar';  // 'entrar' | 'crear'
+
+window._authPanel=function(cual,detalle){
+  ['cargando','out','pendiente','rechazado','error'].forEach(function(k){
+    var el=document.getElementById('auth-p-'+k);
+    if(el)el.classList.toggle('on',k===cual);
+  });
+  var pantalla=document.getElementById('auth-screen');
+  if(pantalla)pantalla.style.display='flex';
+  if(cual==='error'){var d=document.getElementById('auth-err-detalle');if(d)d.textContent=detalle||'';}
+  if(cual==='pendiente'){var q=document.getElementById('auth-pend-quien');if(q)q.textContent=SESION.email||'';}
+};
+
+function authMsg(txt,tipo){
+  var m=document.getElementById('auth-msg');
+  if(!m)return;
+  m.className='auth-msg '+(tipo||'err');
+  m.textContent=txt||'';
 }
-function checkAdminPass(){
-  var pass=document.getElementById('admin-pass').value;
-  var e=document.getElementById('admin-error');
-  if(pass===ADMIN_PASS){
-    document.getElementById('modal-admin-login').classList.remove('open');
-    ROLE='admin';try{localStorage.setItem('futbolito_role','admin')}catch(_){};buildNav();go(S.view);
-  } else {if(e)e.style.display='block';}
+function authToggleModo(){
+  AUTH_MODO=AUTH_MODO==='entrar'?'crear':'entrar';
+  var crear=AUTH_MODO==='crear';
+  document.getElementById('auth-nombre').style.display=crear?'block':'none';
+  document.getElementById('auth-submit').textContent=crear?'Crear cuenta':'Entrar';
+  document.getElementById('auth-toggle').textContent=crear?'Ya tengo cuenta':'Crear cuenta';
+  document.getElementById('auth-pass').setAttribute('autocomplete',crear?'new-password':'current-password');
+  authMsg('');
 }
-function adminLogout(){
-  ROLE='user';try{localStorage.removeItem('futbolito_role')}catch(_){};
-  if(S.view==='config')go('dashboard');
-  else buildNav();
+// Traduce los códigos de Firebase. Sin esto la gente ve "auth/invalid-credential".
+function authErrTxt(e){
+  var c=(e&&e.code)||'';
+  if(c==='auth/invalid-credential'||c==='auth/wrong-password'||c==='auth/user-not-found')return'Correo o contraseña incorrectos.';
+  if(c==='auth/email-already-in-use')return'Ese correo ya tiene cuenta. Prueba "Entrar" o "Olvidé mi clave".';
+  if(c==='auth/weak-password')return'La contraseña necesita al menos 6 caracteres.';
+  if(c==='auth/invalid-email')return'Ese correo no se ve válido.';
+  if(c==='auth/popup-blocked'||c==='auth/popup-closed-by-user')return'El navegador bloqueó la ventana de Google. Usa correo y contraseña, o abre la app en Safari/Chrome.';
+  if(c==='auth/operation-not-supported-in-this-environment')return'Google no funciona acá. Usa correo y contraseña.';
+  if(c==='auth/unauthorized-domain')return'Este dominio no está autorizado en Firebase. Usa correo y contraseña.';
+  if(c==='auth/network-request-failed')return'Sin conexión. Revisa la señal.';
+  if(c==='auth/too-many-requests')return'Demasiados intentos. Espera un minuto.';
+  return (e&&e.message)||'No se pudo entrar.';
 }
+async function authGoogle(){
+  authMsg('Abriendo Google…','info');
+  try{ await window._auth.googleIn(); }
+  catch(e){ authMsg(authErrTxt(e)); }
+}
+async function authEmailSubmit(){
+  var mail=(document.getElementById('auth-mail').value||'').trim();
+  var pass=document.getElementById('auth-pass').value||'';
+  var nom=(document.getElementById('auth-nombre').value||'').trim();
+  if(!mail||!pass){authMsg('Falta el correo o la contraseña.');return}
+  if(AUTH_MODO==='crear'&&pass.length<6){authMsg('La contraseña necesita al menos 6 caracteres.');return}
+  authMsg('…','info');
+  try{
+    if(AUTH_MODO==='crear') await window._auth.emailUp(mail,pass,nom);
+    else await window._auth.emailIn(mail,pass);
+  }catch(e){ authMsg(authErrTxt(e)); }
+}
+async function authReset(){
+  var mail=(document.getElementById('auth-mail').value||'').trim();
+  if(!mail){authMsg('Escribe tu correo arriba y vuelve a tocar acá.');return}
+  try{ await window._auth.reset(mail); authMsg('Te mandamos un correo para cambiar la clave.','ok'); }
+  catch(e){ authMsg(authErrTxt(e)); }
+}
+function authSalir(){ if(window._auth)window._auth.out(); }
+
 function updateAdminZone(){
-  // Sidebar admin zone (desktop)
+  var etiqueta = ROLE==='admin' ? 'Admin'
+               : ROLE==='jugador' ? (SESION.nombre||'Jugador')
+               : ROLE==='publico' ? 'Vista pública' : '';
+  var punto = ROLE==='admin'?'#16a34a':ROLE==='jugador'?'#ea6c0a':'#8896b3';
+
   var z=document.getElementById('admin-zone');
   if(z){
-    if(ROLE==='admin'){
-      z.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0"><span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#16a34a"><span style="width:6px;height:6px;border-radius:50%;background:#16a34a;display:inline-block"></span>Admin</span><button onclick="adminLogout()" style="background:none;border:none;cursor:pointer;color:#6b7a99;font-size:11px;font-family:inherit;padding:0">Salir</button></div>';
-    } else {
-      z.innerHTML='<button onclick="openAdminLogin()" title="" style="display:block;width:8px;height:8px;border-radius:50%;background:#d1d5db;border:none;cursor:pointer;margin:4px auto;opacity:0.4"></button>';
-    }
+    z.innerHTML = (ROLE==='publico')
+      ? '<button class="btn btn-sm" style="width:100%" onclick="location.search=\'\'">Entrar</button>'
+      : '<div style="display:flex;align-items:center;justify-content:space-between;padding:2px 0">'
+        +'<span style="display:flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:'+punto+'">'
+        +'<span style="width:6px;height:6px;border-radius:50%;background:'+punto+';display:inline-block"></span>'+esc(etiqueta)+'</span>'
+        +'<button onclick="authSalir()" style="background:none;border:none;cursor:pointer;color:#6b7a99;font-size:11px;font-family:inherit;padding:0">Salir</button></div>';
   }
-  // Topbar admin zone (móvil)
   var zt=document.getElementById('admin-zone-top');
   if(zt){
-    if(ROLE==='admin'){
-      zt.innerHTML='<div style="display:flex;align-items:center;gap:6px"><span style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:rgba(255,255,255,0.5)"><span style="width:5px;height:5px;border-radius:50%;background:#16a34a;display:inline-block"></span>Admin</span><button onclick="adminLogout()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.35);font-size:10px;font-family:inherit;padding:0">Salir</button></div>';
-    } else {
-      zt.innerHTML='<button onclick="openAdminLogin()" style="width:7px;height:7px;border-radius:50%;background:rgba(255,255,255,0.01);border:none;cursor:pointer;display:block;margin-left:8px"></button>';
-    }
+    zt.innerHTML = (ROLE==='publico') ? ''
+      : '<div style="display:flex;align-items:center;gap:6px">'
+        +'<span style="display:flex;align-items:center;gap:4px;font-size:10px;font-weight:600;color:rgba(255,255,255,0.5)">'
+        +'<span style="width:5px;height:5px;border-radius:50%;background:'+punto+';display:inline-block"></span>'+esc(etiqueta)+'</span>'
+        +'<button onclick="authSalir()" style="background:none;border:none;cursor:pointer;color:rgba(255,255,255,0.35);font-size:10px;font-family:inherit;padding:0">Salir</button></div>';
   }
+}
+
+/* ==================== Aprobación de accesos (admin) ==================== */
+var USUARIOS=[];               // caché de usuarios/, refrescada al entrar a Config
+var APR_UID=null;
+
+async function cargarUsuarios(){
+  if(ROLE!=='admin')return;
+  try{ USUARIOS=await window._users.listar(); }
+  catch(e){ console.error('usuarios:',e); USUARIOS=[]; }
+  var a=document.getElementById('cfg-accesos'); if(a)a.innerHTML=rConfigAccesosInner();
+  var b=document.getElementById('cfg-usuarios'); if(b)b.innerHTML=rConfigUsuariosInner();
+}
+
+// pid ya tomados: un mismo jugador no puede quedar vinculado a dos cuentas.
+function pidsTomados(exceptoUid){
+  return USUARIOS.filter(function(u){return u.pid&&u.uid!==exceptoUid}).map(function(u){return u.pid});
+}
+
+function rConfigAccesosInner(){
+  var pend=USUARIOS.filter(function(u){return u.estado==='pendiente'});
+  var h='<div class="row" style="margin-bottom:10px"><div class="card-title" style="margin-bottom:0">Solicitudes de acceso</div>'
+   +(pend.length?'<span class="badge badge-yellow">'+pend.length+' pendiente'+(pend.length>1?'s':'')+'</span>':'<span class="badge badge-green">Sin pendientes</span>')
+   +'</div>';
+  if(!pend.length)return h+'<div class="empty">Nadie esperando aprobación.</div>'
+   +'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-sm" onclick="cargarUsuarios()">Actualizar</button></div>';
+  h+=pend.map(function(u){
+    return '<div style="display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--border)">'
+      +(u.foto?'<img src="'+esc(u.foto)+'" alt="" style="width:34px;height:34px;border-radius:50%;flex-shrink:0" referrerpolicy="no-referrer">'
+             :'<div style="width:34px;height:34px;border-radius:50%;background:var(--bg3);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;font-size:15px;flex-shrink:0">👤</div>')
+      +'<div style="flex:1;min-width:0">'
+      +'<div style="font-size:13px;font-weight:700;color:var(--text);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.nombre||'Sin nombre')+'</div>'
+      +'<div style="font-size:11px;color:var(--text3);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(u.email||'')+'</div>'
+      +'</div>'
+      +'<button class="btn btn-sm btn-primary" onclick="openAprobar(\''+esc(u.uid)+'\')" style="background:#16a34a;border-color:#15803d">Aprobar</button>'
+      +'<button class="btn btn-sm" onclick="rechazarUsuario(\''+esc(u.uid)+'\')" style="color:#dc2626;border-color:#fecaca">✕</button>'
+      +'</div>';
+  }).join('');
+  return h+'<div style="display:flex;gap:8px;margin-top:10px"><button class="btn btn-sm" onclick="cargarUsuarios()">Actualizar</button></div>';
+}
+
+function rConfigUsuariosInner(){
+  var listos=USUARIOS.filter(function(u){return u.estado!=='pendiente'});
+  var h='<div class="card-title">Usuarios</div>';
+  if(!listos.length)return h+'<div class="empty">Todavía no hay cuentas aprobadas ni rechazadas.</div>';
+  var pidsUsados=pidsTomados(null);
+  h+='<div class="table-wrap"><table><thead><tr><th>Nombre</th><th>Rol</th><th>Jugador</th><th>Estado</th><th></th></tr></thead><tbody>';
+  h+=listos.map(function(u){
+    var esYo=u.uid===SESION.uid;
+    var opcionesPid='<option value="">— Sin vincular —</option>'+(S.players||[]).slice().sort(function(a,b){return (a.name||'').localeCompare(b.name||'')}).map(function(p){
+      var ocupado=pidsUsados.indexOf(p.id)>=0&&u.pid!==p.id;
+      return '<option value="'+esc(p.id)+'"'+(u.pid===p.id?' selected':'')+(ocupado?' disabled':'')+'>'+esc(p.name)+(ocupado?' (ya vinculado)':'')+'</option>';
+    }).join('');
+    return '<tr>'
+      +'<td style="font-weight:600">'+esc(u.nombre||'Sin nombre')+(esYo?' <span class="badge badge-neutral">tú</span>':'')+'<div style="font-size:10px;color:var(--text3)">'+esc(u.email||'')+'</div></td>'
+      +'<td><select class="input" style="padding:3px 7px;font-size:11px" '+(esYo?'disabled':'')+' onchange="cambiarRolUsuario(\''+esc(u.uid)+'\',this.value)">'
+        +'<option value="jugador"'+(u.rol==='jugador'?' selected':'')+'>Jugador</option>'
+        +'<option value="admin"'+(u.rol==='admin'?' selected':'')+'>Admin</option></select></td>'
+      +'<td><select class="input" style="padding:3px 7px;font-size:11px" onchange="vincularUsuario(\''+esc(u.uid)+'\',this.value)">'+opcionesPid+'</select></td>'
+      +'<td><span class="badge badge-'+(u.estado==='aprobado'?'green':'red')+'">'+esc(u.estado)+'</span></td>'
+      +'<td style="text-align:right;white-space:nowrap">'+(esYo?'':'<button class="btn btn-sm" onclick="revocarUsuario(\''+esc(u.uid)+'\')">Revocar</button>')+'</td>'
+      +'</tr>';
+  }).join('');
+  return h+'</tbody></table></div>';
+}
+
+function openAprobar(uid){
+  var u=USUARIOS.find(function(x){return x.uid===uid}); if(!u)return;
+  APR_UID=uid;
+  document.getElementById('apr-quien').innerHTML='<b>'+esc(u.nombre||'Sin nombre')+'</b><br><span style="color:var(--text3);font-size:12px">'+esc(u.email||'')+'</span>';
+  document.getElementById('apr-rol').value='jugador';
+  var tomados=pidsTomados(uid);
+  var libres=(S.players||[]).slice().sort(function(a,b){return (a.name||'').localeCompare(b.name||'')});
+  document.getElementById('apr-pid').innerHTML=
+    '<option value="">— Elegir jugador —</option>'
+    +libres.map(function(p){
+       var ocupado=tomados.indexOf(p.id)>=0;
+       return '<option value="'+esc(p.id)+'"'+(ocupado?' disabled':'')+'>'+esc(p.name)+(ocupado?' (ya vinculado)':'')+(p.active?'':' · de baja')+'</option>';
+     }).join('')
+    +'<option value="__nuevo__">➕ Crear jugador nuevo…</option>'
+    +'<option value="__sin__">Sin vincular (admin que no juega)</option>';
+  document.getElementById('apr-pid').onchange=function(){
+    document.getElementById('apr-nuevo-wrap').style.display=this.value==='__nuevo__'?'block':'none';
+    if(this.value==='__nuevo__')document.getElementById('apr-nuevo-nombre').value=u.nombre||'';
+  };
+  document.getElementById('apr-nuevo-wrap').style.display='none';
+  document.getElementById('apr-msg').style.display='none';
+  document.getElementById('modal-aprobar').classList.add('open');
+}
+
+async function confirmarAprobacion(){
+  if(ROLE!=='admin'||!APR_UID)return;
+  var rol=document.getElementById('apr-rol').value;
+  var sel=document.getElementById('apr-pid').value;
+  var msg=document.getElementById('apr-msg');
+  var pid=null;
+  if(sel==='__nuevo__'){
+    var n=(document.getElementById('apr-nuevo-nombre').value||'').trim();
+    if(!n){msg.textContent='Escribe el nombre del jugador nuevo.';msg.style.display='block';return}
+    if((S.players||[]).some(function(p){return (p.name||'').toLowerCase()===n.toLowerCase()})){
+      msg.textContent='Ya hay un jugador con ese nombre. Elígelo de la lista.';msg.style.display='block';return}
+    pid='p'+Date.now();
+    S.players.push({id:pid,name:n,team:document.getElementById('apr-nuevo-team').value,
+                    active:true,skill:document.getElementById('apr-nuevo-skill').value});
+    window._saveToFirestore(null);        // admin: escritura completa
+  } else if(sel==='__sin__'){ pid=null; }
+  else if(!sel){ msg.textContent='Elige un jugador o "Sin vincular".';msg.style.display='block';return }
+  else { pid=sel; }
+  if(rol==='jugador'&&!pid){msg.textContent='Un jugador tiene que estar vinculado a alguien del plantel.';msg.style.display='block';return}
+  try{
+    await window._users.aprobar(APR_UID,rol,pid);
+    document.getElementById('modal-aprobar').classList.remove('open');
+    await cargarUsuarios(); rConfig();
+  }catch(e){ msg.textContent='No se pudo aprobar: '+e.message; msg.style.display='block'; }
+}
+
+async function rechazarUsuario(uid){
+  var u=USUARIOS.find(function(x){return x.uid===uid});
+  if(!confirm('¿Rechazar el acceso de '+((u&&u.nombre)||'esta cuenta')+'?\n\nNo va a poder ver nada al entrar. Se puede revertir después.'))return;
+  try{ await window._users.rechazar(uid); await cargarUsuarios(); }catch(e){alert('No se pudo: '+e.message)}
+}
+async function cambiarRolUsuario(uid,rol){
+  if(uid===SESION.uid&&rol!=='admin'){alert('No puedes quitarte a ti mismo el rol de admin desde acá.');await cargarUsuarios();return}
+  try{ await window._users.setRol(uid,rol); await cargarUsuarios(); }catch(e){alert('No se pudo: '+e.message)}
+}
+async function vincularUsuario(uid,pid){
+  try{ await window._users.setPid(uid,pid||null); await cargarUsuarios(); }catch(e){alert('No se pudo: '+e.message)}
+}
+async function revocarUsuario(uid){
+  if(uid===SESION.uid){alert('No puedes revocarte a ti mismo.');return}
+  var u=USUARIOS.find(function(x){return x.uid===uid});
+  if(!confirm('¿Revocar el acceso de '+((u&&u.nombre)||'esta cuenta')+'?\n\nVuelve a quedar pendiente. Su vínculo con el jugador se mantiene.'))return;
+  try{ await window._users.revocar(uid); await cargarUsuarios(); }catch(e){alert('No se pudo: '+e.message)}
 }
 
 document.addEventListener('DOMContentLoaded',function(){
-  buildNav();setRole(ROLE);go('dashboard');updateAdminZone();
+  // Antes renderizaba la app antes de saber quién eres. Ahora _initApp()
+  // (llamado por _arrancarApp tras resolver la sesión) ya hace exactamente
+  // esto; este listener queda solo como red de seguridad.
+  if(window._appArrancada){ buildNav();setRole(ROLE);go('dashboard');updateAdminZone(); }
 });
 
 
@@ -3390,6 +3909,41 @@ function changeRosterGalletaTeam(idx){
     <div class="modal-footer">
       <button class="btn" onclick="closeEditGalletaDBModal()">Cancelar</button>
       <button class="btn btn-primary" onclick="saveGalletaDB()">Guardar</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="modal-aprobar">
+  <div class="modal" style="max-width:380px">
+    <div class="modal-title">Aprobar acceso</div>
+    <div id="apr-quien" style="background:var(--bg3);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px;font-size:13px;margin-bottom:1rem"></div>
+    <div class="form-group">
+      <div class="form-label">Rol</div>
+      <select class="input" id="apr-rol">
+        <option value="jugador">⚽ Jugador — confirma su asistencia y su perfil</option>
+        <option value="admin">🔑 Admin — control total</option>
+      </select>
+    </div>
+    <div class="form-group">
+      <div class="form-label">Vincular con jugador del plantel</div>
+      <select class="input" id="apr-pid"></select>
+    </div>
+    <div class="form-group" id="apr-nuevo-wrap" style="display:none">
+      <div class="form-label">Nombre del jugador nuevo</div>
+      <input class="input" type="text" id="apr-nuevo-nombre" placeholder="Nombre">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:8px">
+        <select class="input" id="apr-nuevo-team">
+          <option value="Naranjo">🟠 Naranjo</option><option value="Azul">🔵 Azul</option><option value="Flexible">⚪ Flexible</option>
+        </select>
+        <select class="input" id="apr-nuevo-skill">
+          <option value="jugador">⚽ Jugador</option><option value="ambos">🧤⚽ Ambos</option><option value="arquero">🧤 Arquero</option>
+        </select>
+      </div>
+    </div>
+    <div id="apr-msg" style="color:#dc2626;font-size:12px;margin-bottom:8px;display:none"></div>
+    <div class="modal-footer">
+      <button class="btn" onclick="document.getElementById('modal-aprobar').classList.remove('open')">Cancelar</button>
+      <button class="btn btn-primary" onclick="confirmarAprobacion()">Aprobar</button>
     </div>
   </div>
 </div>
