@@ -413,7 +413,7 @@ window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill','setMyName'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
   // Admin manda el documento completo (null=ALL). Jugador manda solo lo que
   // le permiten las reglas: nómina y plantel, nunca plata ni historial.
   window._saveToFirestore(window.ROLE==='admin'?null:['nextMatch','players']);
@@ -1021,6 +1021,7 @@ const clp=n=>new Intl.NumberFormat('es-CL',{style:'currency',currency:'CLP',maxi
 // Necesario porque esos campos los escribe cualquier jugador y se ven vía Firestore
 // en la pantalla de todos: sin esto, un nombre con <script> se ejecuta para todo el grupo.
 const esc=s=>String(s==null?'':s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+function sortByName(arr){arr.sort((a,b)=>(a.name||'').localeCompare(b.name||'','es'));return arr;}
 const fdate=d=>{if(!d)return'–';const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'–';return new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);};
 const fdateYear=d=>{if(!d)return'';const dt=new Date(d+'T12:00:00');const base=new Intl.DateTimeFormat('es-CL',{day:'2-digit',month:'short'}).format(dt);return base+'-'+String(dt.getFullYear()).slice(2);}
 const dateBadgeHTML=(d)=>{const dt=new Date(d+'T12:00:00');if(isNaN(dt.getTime()))return'<div></div>';const dow=new Intl.DateTimeFormat('es-CL',{weekday:'short'}).format(dt).replace('.','').toUpperCase();const day=dt.getDate();const month=new Intl.DateTimeFormat('es-CL',{month:'short'}).format(dt).replace('.','').toUpperCase();return '<div style="display:inline-flex;flex-direction:column;align-items:center;background:#fff;border:2px solid var(--orange);border-radius:14px;padding:6px 14px;min-width:74px;box-shadow:0 4px 12px rgba(234,108,10,0.15);line-height:1"><div style="font-size:10px;font-weight:700;color:var(--orange);letter-spacing:0.08em">'+dow+'</div><div style="font-size:30px;font-weight:800;color:var(--brand);margin:3px 0;letter-spacing:-0.04em">'+day+'</div><div style="font-size:10px;font-weight:600;color:var(--text3);letter-spacing:0.05em">'+month+'</div></div>';};
@@ -2273,6 +2274,24 @@ function setMySkill(sk){
   if(S.view==='proximo')rProximo();
 }
 
+function setMyName(nombre){
+  if(ROLE!=='jugador'&&ROLE!=='admin')return;
+  if(!MY_PID)return;
+  var n=(nombre||'').trim();
+  if(!n){alert('El nombre no puede quedar vacío.');return}
+  if(n.length>40){alert('Nombre muy largo (máximo 40 caracteres).');return}
+  S.players=S.players.map(function(p){return p.id===MY_PID?Object.assign({},p,{name:n}):p});
+  // La fila del roster guarda su propio nombre (no una referencia): sin esto,
+  // el próximo partido seguiría mostrando el nombre viejo hasta el próximo cambio.
+  S.nextMatch.roster=(S.nextMatch.roster||[]).map(function(p){
+    return (p.pid===MY_PID&&!p.galleta)?Object.assign({},p,{name:n}):p;
+  });
+  sortByName(S.players);
+  sortByName(S.nextMatch.roster);
+  rConfig();
+  if(S.view==='proximo')rProximo();
+}
+
 // Tarjeta "Mi estado" — solo rol jugador. El admin ya tiene el <select> por
 // fila; el rol publico nunca la ve (los checks son ROLE==='jugador', no
 // ROLE!=='admin', para que publico quede afuera por construcción).
@@ -2403,6 +2422,7 @@ function saveAddJugadorNomina(){if(ROLE!=='admin')return;
       S.nextMatch.roster.push({pid:p.id,name:p.name,team:p.team,matchTeam:p.team==='Naranjo'?'Naranjo':p.team==='Azul'?'Azul':'Pendiente',status:'Confirmado',goalkeeper:false,skill:p.skill});
     }
   });
+  sortByName(S.nextMatch.roster);
   closeAddJugadorNomina();
   rProximo();
 }
@@ -2475,6 +2495,7 @@ function saveGalleta(){if(ROLE!=='admin')return;
   const ownerName=ownerP?ownerP.name:'Admin';
   const ownerPid=ownerId;
   S.nextMatch.roster.push({pid,name,team:'Flexible',status:gStatus,galleta:true,invBy:ownerName,skill:gSkill,galletaOwner:ownerPid});
+  sortByName(S.nextMatch.roster);
   // Optionally persist to S.galletas DB
   const remember=document.getElementById('g-remember');
   if(remember && remember.checked){
@@ -2911,6 +2932,10 @@ function rAsado(){
   timeline.sort((a,b)=>(a.date||'').localeCompare(b.date||''));
   timeline.forEach(item=>{acc+=item.monto;item.acc=acc;});
   const acumulados=timeline.filter(t=>t.type==='partido').map(t=>({date:t.date,acc:t.acc}));
+  // Si el gasto más reciente quedó fechado después del último partido, ningún
+  // punto del gráfico lo refleja (solo se grafica en fechas de partido). Se
+  // corrige el último punto al total real para que no muestre el bruto.
+  if(acumulados.length)acumulados[acumulados.length-1].acc=acc;
   document.getElementById('page-asado').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Fondo grupal</div><div class="page-title">Asado</div></div></div>
     <div class="bbq-hero">
@@ -3218,6 +3243,11 @@ function rConfig(){
         <button onclick="setMySkill('ambos')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='ambos'?'#bbf7d0':'#e2e8f0'};background:${sk==='ambos'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤⚽<br>Ambos</button>
         <button onclick="setMySkill('arquero')" style="flex:1;padding:12px 6px;border-radius:12px;font-size:12px;font-weight:600;cursor:pointer;border:1.5px solid ${sk==='arquero'?'#bbf7d0':'#e2e8f0'};background:${sk==='arquero'?'#f0fdf4':'#fff'};color:var(--text);font-family:inherit;line-height:1.6">🧤<br>Arquero</button>
       </div>
+      <div class="form-label" style="margin-top:1.25rem;margin-bottom:8px">Mi nombre</div>
+      <div style="display:flex;gap:8px">
+        <input class="input" type="text" id="my-name-input" value="${esc(mp.name)}" maxlength="40" style="flex:1">
+        <button class="btn btn-sm btn-primary" onclick="setMyName(document.getElementById('my-name-input').value)">Guardar</button>
+      </div>
       <div style="margin-top:1.25rem;padding-top:1rem;border-top:1px solid var(--border)"><button class="btn btn-sm" onclick="authSalir()">Cerrar sesión</button></div>
     </div>`;
   }
@@ -3314,6 +3344,7 @@ function saveJugador(){if(ROLE!=='admin')return;
   if(!name)return;
   const id='p'+Date.now();
   S.players.push({id,name,team,active:true,skill:jSkill});
+  sortByName(S.players);
   // NO agregar a nómina automáticamente
   closeJugadorModal();rConfig();
 }
@@ -3520,6 +3551,7 @@ async function confirmarAprobacion(){
     pid='p'+Date.now();
     S.players.push({id:pid,name:n,team:document.getElementById('apr-nuevo-team').value,
                     active:true,skill:document.getElementById('apr-nuevo-skill').value});
+    sortByName(S.players);
     window._saveToFirestore(null);        // admin: escritura completa
   } else if(sel==='__sin__'){ pid=null; }
   else if(!sel){ msg.textContent='Elige un jugador o "Sin vincular".';msg.style.display='block';return }
