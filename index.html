@@ -1292,6 +1292,7 @@ function rDash(){
     return;
   }
   const st=gstats(dashMatches);
+  const fondoAsadoNeto=st.asadoT-(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);
   const last=allDash[allDash.length-1];
   const w=winner(last);
   const totalG=st.og+st.bg;
@@ -1455,7 +1456,7 @@ function rDash(){
         </div>
         <div class="kpi-note">${rachaAnterior>0?'Anterior: '+rachaAnteriorEquipo+' '+rachaAnterior:'Primera racha'}</div>
       </div>
-      <div class="kpi kpi-pink"><div class="kpi-accent"></div><div class="kpi-label">Fondo asado</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(st.asadoT)}</div><div class="kpi-note">acumulado</div></div>
+      <div class="kpi kpi-pink"><div class="kpi-accent"></div><div class="kpi-label">Fondo asado</div><div class="kpi-value" style="font-size:var(--t-num-sm)">${clp(fondoAsadoNeto)}</div><div class="kpi-note">acumulado</div></div>
     </div>
 
 
@@ -2332,7 +2333,7 @@ function rCuotas(){
   const cuotasMatches=getDash2026().filter(m=>!m.cancelled);
   const tp=S.cuotasPend.reduce((s,c)=>s+c.amount,0);
   const tr=cuotasMatches.reduce((s,m)=>s+m.fee*m.players,0);
-  const ta=cuotasMatches.reduce((s,m)=>s+m.asado,0);
+  const ta=cuotasMatches.reduce((s,m)=>s+m.asado,0)-(S.gastos||[]).reduce((s,g)=>s+(g.monto||0),0);
   const tc=cuotasMatches.reduce((s,m)=>s+m.court,0);
   document.getElementById('page-cuotas').innerHTML=`
     <div class="page-header"><div><div class="page-eyebrow">Finanzas</div><div class="page-title">Cuotas</div></div></div>
