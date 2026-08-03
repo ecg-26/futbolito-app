@@ -1627,10 +1627,10 @@ function rDash(){
         +'<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:6px">'
         +'<span style="font-size:15px;font-weight:800;color:var(--text)">'+nmTotal+'<span style="font-size:12px;font-weight:500;color:#8896b3">/14 confirmados</span></span>'
         +'</div>'
-        +'<div style="height:5px;background:#f1f4f8;border-radius:3px;overflow:hidden'+(ROLE==='jugador'?';margin-bottom:10px':'')+'">'
+        +'<div style="height:5px;background:#f1f4f8;border-radius:3px;overflow:hidden'+((ROLE==='jugador'&&FEAT_JUGADOR_ESTADO)?';margin-bottom:10px':'')+'">'
         +'<div style="width:'+pct+'%;height:100%;background:'+barC+';border-radius:3px"></div>'
         +'</div>'
-        +(ROLE!=='jugador'?'':(
+        +(ROLE!=='jugador'||!FEAT_JUGADOR_ESTADO?'':(
           '<div class="att-group">'
           +'<button class="att-btn'+(meSt==='Confirmado'?' att-voy':'')+'" onclick="dashSetMy(\'Confirmado\')">✓ Voy</button>'
           +'<button class="att-btn'+(meSt==='Reserva'?' att-reserva':'')+'" onclick="dashSetMy(\'Reserva\')">Reserva</button>'
@@ -1972,7 +1972,7 @@ function rProximo(){
               const stColor=p.status==='Confirmado'?'#16a34a':p.status==='Reserva'?'#b45309':p.status==='Baja'?'#dc2626':'#8896b3';
               const stBg=p.status==='Confirmado'?'#f0fdf4':p.status==='Reserva'?'#fffbeb':p.status==='Baja'?'#fef2f2':'#f6f8fb';
               const stBrd=p.status==='Confirmado'?'#bbf7d0':p.status==='Reserva'?'#fde68a':p.status==='Baja'?'#fecaca':'#e2e8f0';
-              const canEdit=puedoEditarFila(p);
+              const canEdit=puedoEditarFila(p)&&(ROLE==='admin'||FEAT_JUGADOR_ESTADO);
               if(!canEdit){
                 return '<td><span style="background:'+stBg+';color:'+stColor+';border:1px solid '+stBrd+';border-radius:20px;padding:3px 8px;font-size:11px;font-weight:600">'+(p.status==='Confirmado'?'✓ Voy':p.status==='Reserva'?'Reserva':p.status==='Baja'?'💅🏻 Baja':'Sin resp.')+'</span></td>';
               }
@@ -2234,8 +2234,15 @@ function setGalletaSkill(pid,sk){
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,skill:sk}:p);
   rProximo();
 }
+// Auto-servicio de asistencia (jugador cambiando su propio estado) en pausa
+// a pedido: recién se activó el login y sería lío que solo algunos lo usen
+// mientras el resto sigue coordinando por WhatsApp. Cuando el grupo esté
+// listo, este flag en true reactiva los 3 lugares (Dashboard, "Mi estado"
+// en Próximo, y el <select> de la nómina) sin tocar nada más.
+var FEAT_JUGADOR_ESTADO=false;
 function setRSt(pid,s){
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
+  if(ROLE!=='admin'&&!FEAT_JUGADOR_ESTADO)return;
   // Admin puede todo; jugador solo puede cambiar su propio estado o el de su galleta.
   if(!puedoEditarFila(target))return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,status:s}:p);
@@ -2248,6 +2255,7 @@ var ST_AUTO=['Confirmado','Reserva','Baja'];
 
 function setMyStatus(s){
   if(ROLE!=='jugador'&&ROLE!=='admin')return;      // publico / pendiente: nunca
+  if(ROLE==='jugador'&&!FEAT_JUGADOR_ESTADO)return; // auto-servicio en pausa
   if(!MY_PID)return;                               // cuenta sin jugador vinculado
   if(ST_AUTO.indexOf(s)<0)return;                  // nadie inventa estados nuevos
   var fila=(S.nextMatch.roster||[]).find(function(p){return p.pid===MY_PID});
@@ -2297,6 +2305,7 @@ function setMyName(nombre){
 // ROLE!=='admin', para que publico quede afuera por construcción).
 function misAccionesHTML(){
   if(ROLE!=='jugador')return'';
+  if(!FEAT_JUGADOR_ESTADO)return'';
   var yo=esc((myPlayer()||{}).name||SESION.nombre||'');
   if(!MY_PID)return'<div class="card"><div class="card-title">Mi estado</div>'
     +'<div class="empty">Tu cuenta todavía no está vinculada a un jugador. Avísale al admin.</div></div>';
