@@ -2295,7 +2295,8 @@ function setMyName(nombre){
     return (p.pid===MY_PID&&!p.galleta)?Object.assign({},p,{name:n}):p;
   });
   sortByName(S.players);
-  sortByName(S.nextMatch.roster);
+  // El roster del partido NO se reordena: la posición es el orden real de
+  // registro, y de eso depende la prioridad de la fila de reserva.
   rConfig();
   if(S.view==='proximo')rProximo();
 }
@@ -2431,7 +2432,6 @@ function saveAddJugadorNomina(){if(ROLE!=='admin')return;
       S.nextMatch.roster.push({pid:p.id,name:p.name,team:p.team,matchTeam:p.team==='Naranjo'?'Naranjo':p.team==='Azul'?'Azul':'Pendiente',status:'Confirmado',goalkeeper:false,skill:p.skill});
     }
   });
-  sortByName(S.nextMatch.roster);
   closeAddJugadorNomina();
   rProximo();
 }
@@ -2504,7 +2504,6 @@ function saveGalleta(){if(ROLE!=='admin')return;
   const ownerName=ownerP?ownerP.name:'Admin';
   const ownerPid=ownerId;
   S.nextMatch.roster.push({pid,name,team:'Flexible',status:gStatus,galleta:true,invBy:ownerName,skill:gSkill,galletaOwner:ownerPid});
-  sortByName(S.nextMatch.roster);
   // Optionally persist to S.galletas DB
   const remember=document.getElementById('g-remember');
   if(remember && remember.checked){
