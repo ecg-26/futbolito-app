@@ -282,7 +282,8 @@ const fbAuth=getAuth(app);
 setPersistence(fbAuth,browserLocalPersistence).catch(e=>console.warn('persist:',e));
 
 const PUBLICO = new URLSearchParams(location.search).get('publico')==='1'
-             || location.hash==='#publico';
+             || location.hash==='#publico'
+             || location.pathname==='/lectura';
 
 window._sesion={uid:null,email:'',nombre:'',foto:null,estado:null,rol:null,pid:null};
 
