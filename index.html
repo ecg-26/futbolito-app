@@ -356,6 +356,50 @@ function _applyRemote(d){
   if(d.reglas&&d.reglas.length)S.reglas=d.reglas;
   if(Array.isArray(d.gastos))S.gastos=d.gastos;
   if(Array.isArray(d.galletas))S.galletas=d.galletas;
+  _fusionarMapas(d);
+  _MIGRAR = !d.perfiles || !(d.nextMatch&&d.nextMatch.estados);
+}
+// ---- Campos que un jugador puede editar DE SÍ MISMO ----------------------
+// Viven en dos mapas (perfiles, nextMatch.estados) además de en los arrays,
+// porque las reglas de Firestore saben verificar "solo tocaste TU clave" en
+// un mapa, pero NO pueden recorrer un array buscando tu fila. Sin esto, la
+// única regla posible para un jugador era "no cambies el tamaño del array",
+// que dejaba abierto editar la plata (paid/fee) de cualquier otro.
+//
+// El ciclo es: el admin guarda el doc completo y los mapas se derivan solos
+// de los arrays (_derivarMapas); al cargar, los mapas se fusionan de vuelta
+// sobre los arrays (_fusionarMapas). Así las ~71 lecturas de S.players y
+// S.nextMatch.roster que hay en la app siguen viendo arrays, sin tocarlas.
+let _MIGRAR=false;
+function _fusionarMapas(d){
+  const perf=(d&&d.perfiles)||{};
+  if(Array.isArray(S.players))S.players=S.players.map(p=>{
+    const x=perf[p.id]; if(!x)return p;
+    const o={...p};
+    if(typeof x.name==='string'&&x.name)o.name=x.name;
+    if(typeof x.skill==='string'&&x.skill)o.skill=x.skill;
+    return o;
+  });
+  const est=(d&&d.nextMatch&&d.nextMatch.estados)||{};
+  if(S.nextMatch&&Array.isArray(S.nextMatch.roster))S.nextMatch.roster=S.nextMatch.roster.map(r=>{
+    let o=r;
+    const x=r.galleta?null:perf[r.pid];        // una galleta no tiene perfil propio
+    if(x){ o={...o}; if(x.name)o.name=x.name; if(x.skill)o.skill=x.skill; }
+    const s=est[r.pid];
+    if(typeof s==='string'&&s){ if(o===r)o={...o}; o.status=s; }
+    return o;
+  });
+}
+// Expuesto para diagnóstico (mismo criterio que window._dbState): permite
+// verificar el round-trip derivar→fusionar contra los datos reales sin
+// escribir nada. No otorga permisos: escribir sigue pasando por las reglas.
+window._mapas={derivar:()=>_derivarMapas(),fusionar:d=>_fusionarMapas(d)};
+function _derivarMapas(){
+  const perfiles={};
+  (S.players||[]).forEach(p=>{ if(p&&p.id)perfiles[p.id]={name:p.name||'',skill:p.skill||'jugador'}; });
+  const estados={};
+  ((S.nextMatch&&S.nextMatch.roster)||[]).forEach(r=>{ if(r&&r.pid)estados[r.pid]=r.status||'Sin confirmar'; });
+  return {perfiles,estados};
 }
 // Qué claves cambiaron desde el último guardado. null/'ALL' = documento
 // completo (admin); un Set = solo esas claves, vía updateDoc (jugador).
@@ -382,7 +426,11 @@ async function _flushSave(){
   try{
     const ref=doc(db,'futbolito','estado');
     if(!scope||scope==='ALL'){
-      await setDoc(ref,{matches:S.matches.filter(m=>m.season!==2025),players:S.players,nextMatch:S.nextMatch,cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
+      // Los mapas se derivan acá y no en cada setter: así no hay forma de que
+      // el admin cambie un nombre/estado y se olvide de sincronizar el mapa.
+      const mp=_derivarMapas();
+      await setDoc(ref,{matches:S.matches.filter(m=>m.season!==2025),players:S.players,perfiles:mp.perfiles,nextMatch:{...S.nextMatch,estados:mp.estados},cuotasPend:S.cuotasPend,metaAsado:S.metaAsado,reglas:S.reglas,gastos:S.gastos||[],galletas:S.galletas||[],updatedAt:stamp});
+      _MIGRAR=false;
     }else{
       // Escritura acotada: solo las claves que realmente cambiaron. Además
       // de cumplir la regla, evita pisar con datos viejos lo que otro haya
@@ -407,6 +455,31 @@ async function _flushSave(){
     if(_dirty){_dirty=false;_saveTimer=setTimeout(_flushSave,300)}
   }
 }
+// Escritura de jugador. NO manda el documento (ni siquiera una parte de él):
+// manda rutas puntuales a SUS claves — 'nextMatch.estados.p8', 'perfiles.p8.name'.
+// Es lo que le permite a la regla comprobar exactamente qué tocó, en vez de
+// confiar en que el cliente mandó lo que corresponde. Plata, historial y
+// composición de la nómina no son alcanzables por esta ruta.
+window._saveMio=async function(patch){
+  const pid=window.MY_PID;
+  if(window.ROLE==='publico'||!pid||!patch)return;
+  if(!_hydrated){_setSaveState('offline');return}
+  const payload={};
+  if(typeof patch.status==='string')payload['nextMatch.estados.'+pid]=patch.status;
+  if(typeof patch.name==='string')  payload['perfiles.'+pid+'.name']=patch.name;
+  if(typeof patch.skill==='string') payload['perfiles.'+pid+'.skill']=patch.skill;
+  if(!Object.keys(payload).length)return;
+  const stamp=new Date().toISOString(),prev=_lastWrite;
+  payload.updatedAt=stamp;
+  _lastWrite=stamp;                       // suprime el eco del propio snapshot
+  _setSaveState('saving');
+  try{ await updateDoc(doc(db,'futbolito','estado'),payload); _setSaveState('saved'); }
+  catch(e){
+    _lastWrite=prev;
+    console.error('FS write mio:',e);_setSaveState('error');
+    if(e&&e.code==='permission-denied')alert('No tienes permiso para guardar este cambio. Si crees que es un error, avísale al admin.');
+  }
+};
 function _flushQueued(){if(_hydrated&&_pendingSave){_pendingSave=false;window._saveToFirestore()}}
 window._flushSaveNow=_flushSave;
 // Para que Config pueda mostrar el estado real de la conexión con la base.
@@ -414,14 +487,18 @@ window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','moveRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill','setMyName'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
-  // Admin manda el documento completo (null=ALL). Jugador manda solo lo que
-  // le permiten las reglas: nómina y plantel, nunca plata ni historial.
-  window._saveToFirestore(window.ROLE==='admin'?null:['nextMatch','players']);
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','moveRoster','saveGasto','removeGasto','editGasto'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
+  // Todas estas son acciones de admin (cada una ya tiene su guard de rol):
+  // guardan el documento completo. El auto-servicio del jugador NO pasa por
+  // acá — usa _saveMio, que escribe solo sus propias claves.
+  window._saveToFirestore(null);
 }}});}
 // Agrupa ráfagas en una sola escritura. Si aún no sabemos qué hay en la nube, NO descarta: encola.
 window._saveToFirestore=function(scope){
-  if(window.ROLE==='publico')return;     // la vista pública jamás escribe
+  // Esta ruta escribe el documento COMPLETO: es exclusiva del admin. Cualquier
+  // otro rol que llegue acá (por un wrapper, un reintento encolado o la consola)
+  // se va sin escribir. El jugador tiene su propia ruta acotada: _saveMio.
+  if(window.ROLE!=='admin')return;
   _addScope(scope===undefined?null:scope);
   if(!_hydrated){_pendingSave=true;_setSaveState('offline');return}
   _retry=0;                              // acción nueva del usuario: reinicia el backoff
@@ -457,6 +534,14 @@ window._loadData=async()=>{
   _loaded=true;
   _initApp();
   _flushQueued();
+  // Migración de una sola vez: el documento viejo no tiene los mapas
+  // perfiles/estados. El primer admin que entre los siembra desde los arrays
+  // (un guardado completo normal). Sin esto la regla del jugador no tendría
+  // contra qué comparar. Idempotente: _MIGRAR se apaga al guardar.
+  if(_hydrated&&_MIGRAR&&window.ROLE==='admin'){
+    console.info('Sembrando perfiles/estados (migración única).');
+    window._saveToFirestore(null);
+  }
 };
 window._initApp=_initApp;
 
@@ -1097,7 +1182,10 @@ function esMiGalleta(p){ return !!MY_PID && !!p && !!p.galleta && p.galletaOwner
 function puedoEditarFila(p){
   if(ROLE==='admin')return true;
   if(ROLE!=='jugador'||!p)return false;
-  return esMiFila(p.pid)||esMiGalleta(p);
+  // Solo su propia fila. La galleta queda fuera a propósito: no tiene clave
+  // propia en los mapas, así que ninguna regla del servidor podría respaldar
+  // ese permiso — y un permiso que solo existe en el cliente no es un permiso.
+  return esMiFila(p.pid);
 }
 function getSkill(p){
   // Galletas tienen su propio skill en p.skill
@@ -2237,8 +2325,11 @@ function togglePaid(pid){
   rCuotas();
 }
 function setGalletaSkill(pid,sk){
-  const target=S.nextMatch.roster.find(p=>p.pid===pid);
-  if(!puedoEditarFila(target))return;
+  // Solo admin: una galleta no tiene cuenta ni clave propia en los mapas, así
+  // que la regla de Firestore no tiene forma de comprobar de quién es. Antes
+  // el dueño podía editarla; se quita a cambio de que nadie pueda tocar filas
+  // ajenas. El dueño le pide el cambio al admin.
+  if(ROLE!=='admin')return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,skill:sk}:p);
   rProximo();
 }
@@ -2251,15 +2342,24 @@ var FEAT_JUGADOR_ESTADO=false;
 function setRSt(pid,s){
   const target=S.nextMatch.roster.find(p=>p.pid===pid);
   if(ROLE!=='admin'&&!FEAT_JUGADOR_ESTADO)return;
-  // Admin puede todo; jugador solo puede cambiar su propio estado o el de su galleta.
+  // Admin puede todo; jugador solo su propia fila.
   if(!puedoEditarFila(target))return;
   S.nextMatch.roster=S.nextMatch.roster.map(p=>p.pid===pid?{...p,status:s}:p);
+  if(ROLE!=='admin')guardarMio({status:s});   // jugador: escritura por su clave
   rProximo();
 }
 
 // Vocabulario existente. 'Sin confirmar' no se ofrece: es el default, no una
 // acción — que alguien "des-responda" no aporta nada y ensucia el contador.
 var ST_AUTO=['Confirmado','Reserva','Baja'];
+
+// Un cambio del propio jugador se guarda por su ruta puntual (_saveMio) en vez
+// del documento completo: es lo que hace que la regla de Firestore pueda
+// comprobar que solo tocó SU clave. El admin sigue guardando el doc entero.
+function guardarMio(patch){
+  if(ROLE==='admin'){ if(window._saveToFirestore)window._saveToFirestore(null); return }
+  if(window._saveMio)window._saveMio(patch);
+}
 
 function setMyStatus(s){
   if(ROLE!=='jugador'&&ROLE!=='admin')return;      // publico / pendiente: nunca
@@ -2273,6 +2373,7 @@ function setMyStatus(s){
   S.nextMatch.roster=S.nextMatch.roster.map(function(p){
     return p.pid===MY_PID?Object.assign({},p,{status:s}):p;
   });
+  guardarMio({status:s});
   rProximo();
 }
 
@@ -2286,6 +2387,7 @@ function setMySkill(sk){
   S.nextMatch.roster=(S.nextMatch.roster||[]).map(function(p){
     return (p.pid===MY_PID&&!p.galleta)?Object.assign({},p,{skill:sk}):p;
   });
+  guardarMio({skill:sk});
   rConfig();
   if(S.view==='proximo')rProximo();
 }
@@ -2305,6 +2407,7 @@ function setMyName(nombre){
   sortByName(S.players);
   // El roster del partido NO se reordena: la posición es el orden real de
   // registro, y de eso depende la prioridad de la fila de reserva.
+  guardarMio({name:n});
   rConfig();
   if(S.view==='proximo')rProximo();
 }
