@@ -1605,6 +1605,8 @@ function rDash(){
 
     ${matchAlertHTML(nm.date)}
 
+    ${(()=>{const tp=(S.cuotasPend||[]).reduce((s,c)=>s+c.amount,0);return tp>0?`<div class="alert-yellow">⚠ Hay ${clp(tp)} en cuotas pendientes de ${S.cuotasPend.length} jugadores.</div>`:'';})()}
+
     <!-- PRÓXIMO PARTIDO COMPACTO -->
     ${(()=>{
       const me=myRosterRow();
@@ -2722,6 +2724,19 @@ function rCuotas(){
       <canvas id="chartCuotasC" style="width:100%;height:150px"></canvas>
     </div>
     <div class="card" style="margin-bottom:12px">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
+        <div class="card-title" style="margin-bottom:0">Pendientes de pago (morosos)</div>
+        ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openAddMoroso()">+ Agregar</button>':''}
+      </div>
+      ${S.cuotasPend.length===0?`<div class="empty">Todo al día 🎉</div>`:`
+      <table><thead><tr><th>Jugador</th><th>Fecha</th><th>Monto</th><th></th></tr></thead>
+      <tbody>${S.cuotasPend.map((c,i)=>`<tr>
+        <td style="font-weight:600">${esc(c.name)}</td><td style="color:var(--text2);white-space:nowrap">${esc(c.fecha)}</td>
+        <td style="color:var(--orange);font-weight:700;white-space:nowrap">${clp(c.amount)}</td>
+        <td>${ROLE==='admin'?adminPayBtn(i):''}</td>
+      </tr>`).join('')}</tbody></table>`}
+    </div>
+    <div class="card" style="margin-bottom:12px">
       <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px">
         <div class="card-title" style="margin-bottom:0">Nómina próximo partido</div>
         <span style="font-size:11px;color:#8896b3">${fdate(S.nextMatch.date)}</span>
@@ -2749,19 +2764,6 @@ function rCuotas(){
           }).join('');
         })()}</tbody>
       </table></div>
-    </div>
-    <div class="card">
-      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:12px">
-        <div class="card-title" style="margin-bottom:0">Pendientes de pago (morosos)</div>
-        ${ROLE==='admin'?'<button class="btn btn-sm" onclick="openAddMoroso()">+ Agregar</button>':''}
-      </div>
-      ${S.cuotasPend.length===0?`<div class="empty">Todo al día 🎉</div>`:`
-      <table><thead><tr><th>Jugador</th><th>Fecha</th><th>Monto</th><th></th></tr></thead>
-      <tbody>${S.cuotasPend.map((c,i)=>`<tr>
-        <td style="font-weight:600">${esc(c.name)}</td><td style="color:var(--text2);white-space:nowrap">${esc(c.fecha)}</td>
-        <td style="color:var(--orange);font-weight:700;white-space:nowrap">${clp(c.amount)}</td>
-        <td>${ROLE==='admin'?adminPayBtn(i):''}</td>
-      </tr>`).join('')}</tbody></table>`}
     </div>
     <div class="card">
       <div class="card-title">Desglose por fecha</div>
