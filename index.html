@@ -2426,10 +2426,15 @@ function limpiarNomina(){
 function closeAddJugadorNomina(){document.getElementById('modal-add-jugador-nomina').classList.remove('open');}
 function saveAddJugadorNomina(){if(ROLE!=='admin')return;
   const checks=document.querySelectorAll('#nomina-jugadores-list input[type=checkbox]:checked');
+  // Cupo ideal son 14 (7v7, ver Reglas). El que se registra pasado el cupo
+  // entra directo como reserva, en el orden en que se fue anotando.
+  let confCount=(S.nextMatch.roster||[]).filter(p=>p.status==='Confirmado').length;
   checks.forEach(cb=>{
     const p=S.players.find(x=>x.id===cb.value);
     if(p){
-      S.nextMatch.roster.push({pid:p.id,name:p.name,team:p.team,matchTeam:p.team==='Naranjo'?'Naranjo':p.team==='Azul'?'Azul':'Pendiente',status:'Confirmado',goalkeeper:false,skill:p.skill});
+      const status=confCount<14?'Confirmado':'Reserva';
+      if(status==='Confirmado')confCount++;
+      S.nextMatch.roster.push({pid:p.id,name:p.name,team:p.team,matchTeam:p.team==='Naranjo'?'Naranjo':p.team==='Azul'?'Azul':'Pendiente',status,goalkeeper:false,skill:p.skill});
     }
   });
   closeAddJugadorNomina();
@@ -2503,7 +2508,11 @@ function saveGalleta(){if(ROLE!=='admin')return;
   const ownerP=S.players.find(x=>x.id===ownerId);
   const ownerName=ownerP?ownerP.name:'Admin';
   const ownerPid=ownerId;
-  S.nextMatch.roster.push({pid,name,team:'Flexible',status:gStatus,galleta:true,invBy:ownerName,skill:gSkill,galletaOwner:ownerPid});
+  // Mismo cupo de 14 que en saveAddJugadorNomina: sin cupo, entra de reserva
+  // aunque se haya dejado marcado "Voy" en el toggle.
+  const confCount=(S.nextMatch.roster||[]).filter(p=>p.status==='Confirmado').length;
+  const status=confCount<14?gStatus:'Reserva';
+  S.nextMatch.roster.push({pid,name,team:'Flexible',status,galleta:true,invBy:ownerName,skill:gSkill,galletaOwner:ownerPid});
   // Optionally persist to S.galletas DB
   const remember=document.getElementById('g-remember');
   if(remember && remember.checked){
