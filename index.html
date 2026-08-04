@@ -2161,8 +2161,9 @@ function saveFinalizar(){if(ROLE!=='admin')return;
   const nid=S.matches.length?Math.max(...S.matches.map(m=>m.id))+1:1;
   // Registrar partido en historial
   S.matches.push({id:nid,date:S.nextMatch.date,orange,blue,players,court,fee,asado,season:2026,roster:S.nextMatch.roster.map(p=>({pid:p.pid,name:p.name,team:p.team,matchTeam:p.matchTeam,status:p.status,galleta:p.galleta||false,galletaOwner:p.galletaOwner,invBy:p.invBy,skill:p.skill,goalkeeper:p.goalkeeper||false}))});
-  // Mover no pagados a morosos
-  S.nextMatch.roster.filter(p=>(p.status==='Confirmado'||p.status==='Reserva')&&!p.paid).forEach(p=>{
+  // Mover no pagados a morosos. Reserva no debe: si terminó jugando, ya
+  // debería estar como Confirmado antes de llegar acá.
+  S.nextMatch.roster.filter(p=>p.status==='Confirmado'&&!p.paid).forEach(p=>{
     S.cuotasPend.push({pid:p.pid,name:p.name+(p.galleta?' (🍪 de '+p.invBy+')':''),fecha:fdate(S.nextMatch.date),amount:fee});
   });
   // Crear nuevo partido con roster base (sin galletas, todos sin confirmar)
@@ -2728,7 +2729,9 @@ function rCuotas(){
       <div class="table-wrap"><table>
         <thead><tr><th>Nombre</th><th style="text-align:center">Monto</th><th style="text-align:center">Pago</th></tr></thead>
         <tbody>${(()=>{
-          const activos=S.nextMatch.roster.filter(p=>p.status==='Confirmado'||p.status==='Reserva');
+          // Reserva no debe cuota: solo se cobra a quien de verdad va a jugar.
+          // Si un reserva sube a Confirmado, entra acá solo en ese momento.
+          const activos=S.nextMatch.roster.filter(p=>p.status==='Confirmado');
           const fee=S.nextMatch.fee||4000;
           return activos.map(p=>{
             const galletaTag=p.galleta?'<span style="background:#f5f0eb;color:#6b5744;border:1px solid #a8896f;border-radius:20px;padding:1px 6px;font-size:10px;font-weight:600;margin-left:3px">🍪 de '+esc(p.invBy)+'</span>':'';
