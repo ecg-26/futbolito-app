@@ -413,7 +413,7 @@ window._dbState=function(){return{loaded:_loaded&&_hydrated,lastWrite:_lastWrite
 // El celular mata la pestaña sin avisar: descargar lo pendiente antes de irse.
 addEventListener('visibilitychange',function(){if(document.visibilityState==='hidden'&&_saveTimer)_flushSave()});
 addEventListener('pagehide',function(){if(_saveTimer)_flushSave()});
-function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill','setMyName'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
+function _initApp(){if(typeof buildNav==='function')buildNav();if(typeof setRole==='function')setRole(ROLE);if(typeof go==='function')go('dashboard');['saveMatch','saveJugador','saveFinalizar','markPaid','toggleP','setSkill','setName','setTeam','setGalletaSkill','togglePaid','setMatchTeam','toggleGoalkeeper','autoAsignar','toggleMyGoalkeeper','setRSt','saveGalleta','pickSkill','crearPartido','saveEditPartido','saveAddJugadorNomina','limpiarNomina','saveEditRegla','saveAddMoroso','editAsadoPartido','editCuotaJugador','removeFromRoster','moveRoster','saveGasto','removeGasto','editGasto','setMyStatus','setMySkill','setMyName'].forEach(fn=>{if(typeof window[fn]==='function'){const o=window[fn];window[fn]=function(...a){o.apply(this,a);
   // Admin manda el documento completo (null=ALL). Jugador manda solo lo que
   // le permiten las reglas: nómina y plantel, nunca plata ni historial.
   window._saveToFirestore(window.ROLE==='admin'?null:['nextMatch','players']);
@@ -1983,7 +1983,11 @@ function rProximo(){
                 +'<option value="Sin confirmar"'+(p.status==='Sin confirmar'?' selected':'')+'>Sin resp.</option>'
                 +'</select></td>';
             })()
-            +(ROLE==='admin'?'<td style="width:32px;text-align:center"><button onclick="removeFromRoster(&apos;'+p.pid+'&apos;)" title="Eliminar de la nómina" style="background:none;border:1px solid #fecaca;border-radius:50%;width:24px;height:24px;cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;line-height:1;padding:0">✕</button></td>':'')
+            +(ROLE==='admin'?'<td style="white-space:nowrap;text-align:right">'
+              +'<button onclick="moveRoster(&apos;'+p.pid+'&apos;,-1)"'+(i===0?' disabled':'')+' title="Subir" style="background:none;border:1px solid var(--border2);border-radius:6px;width:22px;height:22px;cursor:pointer;color:var(--text2);font-size:11px;line-height:1;padding:0;margin-right:2px;opacity:'+(i===0?'.35':'1')+'">▲</button>'
+              +'<button onclick="moveRoster(&apos;'+p.pid+'&apos;,1)"'+(i===r.length-1?' disabled':'')+' title="Bajar" style="background:none;border:1px solid var(--border2);border-radius:6px;width:22px;height:22px;cursor:pointer;color:var(--text2);font-size:11px;line-height:1;padding:0;margin-right:4px;opacity:'+(i===r.length-1?'.35':'1')+'">▼</button>'
+              +'<button onclick="removeFromRoster(&apos;'+p.pid+'&apos;)" title="Eliminar de la nómina" style="background:none;border:1px solid #fecaca;border-radius:50%;width:24px;height:24px;cursor:pointer;color:#dc2626;font-size:11px;font-weight:700;line-height:1;padding:0">✕</button>'
+              +'</td>':'')
             +'</tr>';
         }).join('')}</tbody>
       </table></div>
@@ -2844,6 +2848,18 @@ function rCuotas(){
   });
 }
 function removeFromRoster(pid){if(ROLE!=='admin')return;if(!confirm('¿Eliminar este jugador de la nómina?'))return;S.nextMatch.roster=S.nextMatch.roster.filter(p=>p.pid!==pid);rProximo();}
+// Mueve una fila dentro del roster (dir=-1 sube, dir=1 baja). La posición
+// ES el orden de registro/prioridad de reserva, así que esto es la forma
+// de corregirlo a mano cuando el admin necesita alterarlo.
+function moveRoster(pid,dir){
+  if(ROLE!=='admin')return;
+  const arr=S.nextMatch.roster;
+  const i=arr.findIndex(p=>p.pid===pid);
+  const j=i+dir;
+  if(i<0||j<0||j>=arr.length)return;
+  const tmp=arr[i];arr[i]=arr[j];arr[j]=tmp;
+  rProximo();
+}
 function renderGastosBlock(){
   const gs=S.gastos||[];
   const total=gs.reduce((s,g)=>s+(g.monto||0),0);
