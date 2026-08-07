@@ -1,5 +1,6 @@
 {
   "rewrites": [
-    { "source": "/lectura", "destination": "/index.html" }
+    { "source": "/lectura", "destination": "/index.html" },
+    { "source": "/clave", "destination": "/index.html" }
   ]
 }

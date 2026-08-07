@@ -267,6 +267,7 @@ import { getAuth, setPersistence, browserLocalPersistence,
          GoogleAuthProvider, signInWithPopup,
          createUserWithEmailAndPassword, signInWithEmailAndPassword,
          sendPasswordResetEmail, updateProfile,
+         verifyPasswordResetCode, confirmPasswordReset, applyActionCode,
          signOut as fbSignOut, onAuthStateChanged
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDomain:"futbolito-2026.firebaseapp.com",projectId:"futbolito-2026",storageBucket:"futbolito-2026.firebasestorage.app",messagingSenderId:"437587417937",appId:"1:437587417937:web:cdc4e473f10b6d151e1170"});
@@ -277,6 +278,11 @@ const app=initializeApp({apiKey:"AIzaSyDVhhvjE2FpV2vQ6iDO_-5BKfThwr04CQk",authDo
 const db=initializeFirestore(app,{ignoreUndefinedProperties:true});
 
 const fbAuth=getAuth(app);
+// Sin esto Firebase manda los correos (hoy solo el de recuperar clave) en inglés,
+// que es su idioma por defecto. No se usa useDeviceLanguage() a propósito: el
+// grupo es todo chileno y el correo debe llegar en español aunque alguien tenga
+// el celular configurado en otro idioma.
+fbAuth.languageCode='es';
 // browserLocalPersistence: en el celular la app se abre y cierra todo el día.
 // Sin esto, cada vez que iOS mata la pestaña habría que loguearse de nuevo.
 setPersistence(fbAuth,browserLocalPersistence).catch(e=>console.warn('persist:',e));
@@ -284,6 +290,13 @@ setPersistence(fbAuth,browserLocalPersistence).catch(e=>console.warn('persist:',
 const PUBLICO = new URLSearchParams(location.search).get('publico')==='1'
              || location.hash==='#publico'
              || location.pathname==='/lectura';
+
+// Pantalla de cambio de clave. El correo de "olvidé mi clave" apunta acá en vez
+// de al dominio de Firebase, así el link que le llega a la gente dice
+// futbolito.space y no un dominio que nadie reconoce. Es una pantalla aparte:
+// no arranca la app, no pide sesión y no toca Firestore — solo canjea el código
+// del correo por una contraseña nueva.
+const ACCION = location.pathname==='/clave';
 
 window._sesion={uid:null,email:'',nombre:'',foto:null,estado:null,rol:null,pid:null};
 
@@ -583,7 +596,35 @@ async function _asegurarDocUsuario(u){
   return nuevo;
 }
 
+// Puente hacia el script clásico, mismo patrón que window._auth.
+window._clave={
+  confirmar:(code,pass)=>confirmPasswordReset(fbAuth,code,pass)
+};
+
+async function _bootAccion(){
+  const q=new URLSearchParams(location.search);
+  const modo=q.get('mode')||'', code=q.get('oobCode')||'';
+  const P=window._clavePanel;
+  if(!code){ P('mal','A este enlace le falta el código. Copia el link completo del correo.'); return; }
+  if(modo==='verifyEmail'){
+    // Hoy la app no manda este correo, pero la URL de acción es la misma para
+    // todas las plantillas: si algún día se activa, acá no se rompe.
+    try{ await applyActionCode(fbAuth,code); P('ok','verify'); }
+    catch(e){ P('mal',window._claveErr(e)); }
+    return;
+  }
+  if(modo!=='resetPassword'){ P('mal','Este enlace no sirve para cambiar la contraseña.'); return; }
+  P('cargando');
+  try{
+    // Devuelve el correo dueño del código: sirve para mostrarle a la persona
+    // qué cuenta está cambiando, y de paso valida que el link siga vivo.
+    const mail=await verifyPasswordResetCode(fbAuth,code);
+    P('form',mail);
+  }catch(e){ P('mal',window._claveErr(e)); }
+}
+
 async function _bootAuth(){
+  if(ACCION){ _bootAccion(); return; }   // /clave: ni app ni sesión
   if(PUBLICO){                        // modo espejo: sin login, solo lectura
     window.ROLE='publico'; window.MY_PID=null;
     _arrancarApp();
@@ -689,6 +730,36 @@ _bootAuth();
         <button class="btn" onclick="location.reload()">Reintentar</button>
         <button class="btn" onclick="authSalir()">Salir</button>
       </div>
+    </div>
+
+    <!-- Pantallas de /clave: solo se ven si el link viene del correo -->
+    <div class="auth-panel" id="auth-p-clave-form">
+      <span class="login-emoji">🔑</span>
+      <div class="login-title">Contraseña nueva</div>
+      <div class="login-sub" id="clave-quien"></div>
+      <input class="auth-input" type="password" id="clave-p1" placeholder="Contraseña nueva" autocomplete="new-password">
+      <input class="auth-input" type="password" id="clave-p2" placeholder="Repítela" autocomplete="new-password"
+             onkeydown="if(event.key==='Enter')claveSubmit()">
+      <button class="login-btn" id="clave-submit" onclick="claveSubmit()">Guardar</button>
+      <div class="auth-msg err" id="clave-msg"></div>
+      <div style="font-size:12px;color:rgba(255,255,255,.5);margin-top:10px">Mínimo 6 caracteres.</div>
+    </div>
+
+    <div class="auth-panel" id="auth-p-clave-ok">
+      <span class="login-emoji">✅</span>
+      <div class="login-title">Listo</div>
+      <div class="login-sub" id="clave-ok-txt">Tu contraseña quedó cambiada.</div>
+      <button class="login-btn" onclick="location.href='/'">Entrar a Futbolito</button>
+    </div>
+
+    <div class="auth-panel" id="auth-p-clave-mal">
+      <span class="login-emoji">⚠️</span>
+      <div class="login-title">Enlace no válido</div>
+      <div class="auth-msg err" id="clave-mal-detalle"></div>
+      <div style="font-size:13px;color:rgba(255,255,255,.6);line-height:1.6;margin-top:10px">
+        Entra a Futbolito y toca "Olvidé mi clave" para que te llegue un enlace nuevo.
+      </div>
+      <div style="margin-top:1.25rem"><button class="login-btn" onclick="location.href='/'">Ir a Futbolito</button></div>
     </div>
 
   </div>
@@ -3517,6 +3588,60 @@ function authMsg(txt,tipo){
   if(!m)return;
   m.className='auth-msg '+(tipo||'err');
   m.textContent=txt||'';
+}
+
+// ---- Pantalla /clave -------------------------------------------------------
+// Vive en el mismo archivo que todo lo demás a propósito: duplicarla en un
+// segundo HTML significaría mantener dos veces los estilos del login.
+window._claveErr=function(e){
+  var c=(e&&e.code)||'';
+  if(c==='auth/expired-action-code')return'Este enlace ya venció.';
+  if(c==='auth/invalid-action-code')return'Este enlace ya se usó o no es válido.';
+  if(c==='auth/user-disabled')return'Esta cuenta está deshabilitada. Habla con el admin del grupo.';
+  if(c==='auth/user-not-found')return'Esta cuenta ya no existe. Habla con el admin del grupo.';
+  if(c==='auth/weak-password')return'La contraseña necesita al menos 6 caracteres.';
+  if(c==='auth/network-request-failed')return'Sin conexión. Revisa la señal.';
+  if(c==='auth/too-many-requests')return'Demasiados intentos. Espera un minuto.';
+  return (e&&e.message)||'No se pudo cambiar la contraseña.';
+};
+window._clavePanel=function(cual,extra){
+  // Apaga TODOS los paneles, no solo los de /clave: así esta pantalla y la de
+  // login nunca pueden quedar encendidas las dos a la vez.
+  var todos=document.querySelectorAll('.auth-panel');
+  for(var i=0;i<todos.length;i++)todos[i].classList.remove('on');
+  var el=document.getElementById(cual==='cargando'?'auth-p-cargando':'auth-p-clave-'+cual);
+  if(el)el.classList.add('on');
+  var pantalla=document.getElementById('auth-screen');
+  if(pantalla)pantalla.style.display='flex';
+  if(cual==='form'){
+    var q=document.getElementById('clave-quien');
+    if(q)q.textContent=extra||'';
+    var p1=document.getElementById('clave-p1');
+    if(p1)setTimeout(function(){p1.focus()},50);
+  }
+  if(cual==='mal'){var d=document.getElementById('clave-mal-detalle');if(d)d.textContent=extra||''}
+  if(cual==='ok'&&extra==='verify'){var t=document.getElementById('clave-ok-txt');if(t)t.textContent='Tu correo quedó verificado.'}
+};
+function claveMsg(txt){
+  var m=document.getElementById('clave-msg');
+  if(m)m.textContent=txt||'';
+}
+async function claveSubmit(){
+  var p1=document.getElementById('clave-p1').value||'';
+  var p2=document.getElementById('clave-p2').value||'';
+  if(p1.length<6){claveMsg('La contraseña necesita al menos 6 caracteres.');return}
+  if(p1!==p2){claveMsg('Las dos contraseñas no son iguales.');return}
+  var code=new URLSearchParams(location.search).get('oobCode')||'';
+  var btn=document.getElementById('clave-submit');
+  claveMsg('');
+  if(btn){btn.disabled=true;btn.textContent='Guardando…'}
+  try{
+    await window._clave.confirmar(code,p1);
+    window._clavePanel('ok');
+  }catch(e){
+    claveMsg(window._claveErr(e));
+    if(btn){btn.disabled=false;btn.textContent='Guardar'}
+  }
 }
 function authToggleModo(){
   AUTH_MODO=AUTH_MODO==='entrar'?'crear':'entrar';
